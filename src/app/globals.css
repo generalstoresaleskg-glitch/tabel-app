@@ -109,6 +109,25 @@ body {
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium bg-indigo-50 text-indigo-700;
   }
 
+  /* Переключатель "Смена / Визит-задача" без единой строчки JS —
+     чистый CSS через :checked + сиблинг-селектор. Работает для любого
+     количества форм на странице, id внутри каждой формы свои. */
+  .type-toggle .shift-only,
+  .type-toggle .visit-only {
+    display: none;
+  }
+  .type-toggle input[value="SHIFT"]:checked ~ .shift-only {
+    display: block;
+  }
+  .type-toggle input[value="VISIT"]:checked ~ .visit-only {
+    display: block;
+  }
+  .type-option {
+    @apply cursor-pointer select-none rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm
+      font-medium text-slate-600 transition-colors has-[:checked]:border-indigo-500
+      has-[:checked]:bg-indigo-50 has-[:checked]:text-indigo-700;
+  }
+
   .page-title {
     @apply text-2xl font-semibold tracking-tight text-slate-900;
   }

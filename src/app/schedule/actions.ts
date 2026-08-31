@@ -4,9 +4,9 @@ import { randomUUID } from "crypto";
 import { and, eq, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { schedules, shifts, scheduleChangeLog, users } from "@/db/schema";
+import { schedules, shifts, scheduleChangeLog, users, points } from "@/db/schema";
 import { requireRole, requireUser } from "@/lib/session";
-import { weekDates } from "@/lib/dates";
+import { weekDates, addDays } from "@/lib/dates";
 
 async function logChange(
   scheduleId: string,
@@ -42,6 +42,58 @@ export async function createDraftForWeek(weekStart: string) {
   revalidatePath("/schedule");
 }
 
+// Создаёт черновик на неделю и копирует в него все задачи из графика
+// предыдущей недели (даты сдвигаются на +7 дней). Подтверждения сотрудников
+// сбрасываются — черновик проходит обычный цикл согласования заново.
+export async function copyPreviousWeek(weekStart: string) {
+  const me = await requireRole(["owner", "manager"]);
+
+  const existingRows = await db
+    .select()
+    .from(schedules)
+    .where(eq(schedules.weekStart, weekStart));
+  if (existingRows[0]) return;
+
+  const prevWeekStart = addDays(weekStart, -7);
+  const prevScheduleRows = await db
+    .select()
+    .from(schedules)
+    .where(eq(schedules.weekStart, prevWeekStart));
+  const prevSchedule = prevScheduleRows[0];
+
+  const newScheduleId = randomUUID();
+  await db.insert(schedules).values({
+    id: newScheduleId,
+    weekStart,
+    status: "draft",
+    createdBy: me.id,
+  });
+
+  if (prevSchedule) {
+    const prevShifts = await db
+      .select()
+      .from(shifts)
+      .where(eq(shifts.scheduleId, prevSchedule.id));
+
+    for (const s of prevShifts) {
+      await db.insert(shifts).values({
+        id: randomUUID(),
+        scheduleId: newScheduleId,
+        pointId: s.pointId,
+        userId: s.userId,
+        type: s.type,
+        date: addDays(s.date, 7),
+        plannedStart: s.plannedStart,
+        plannedEnd: s.plannedEnd,
+        note: s.note,
+        employeeAck: "pending",
+      });
+    }
+  }
+
+  revalidatePath("/schedule");
+}
+
 export async function addShift(scheduleId: string, formData: FormData) {
   const me = await requireRole(["owner", "manager"]);
 
@@ -57,10 +109,9 @@ export async function addShift(scheduleId: string, formData: FormData) {
   const userId = String(formData.get("userId") ?? "");
   const type = String(formData.get("type") ?? "SHIFT") as "SHIFT" | "VISIT";
   const selectedDates = formData.getAll("dates").map(String).filter(Boolean);
-  const plannedStart = String(formData.get("plannedStart") ?? "") || null;
-  const detail = String(formData.get("detail") ?? "").trim() || null;
-  const plannedEnd = type === "SHIFT" ? detail : null;
-  const note = type === "VISIT" ? detail : null;
+  const rawStart = String(formData.get("plannedStart") ?? "").trim();
+  const rawEnd = String(formData.get("plannedEnd") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim() || null;
 
   if (!pointId || !userId || selectedDates.length === 0) return;
 
@@ -73,6 +124,15 @@ export async function addShift(scheduleId: string, formData: FormData) {
   const targetUserRows = await db.select().from(users).where(eq(users.id, userId));
   const targetUser = targetUserRows[0];
   if (!targetUser || targetUser.role === "owner") return;
+
+  const pointRows = await db.select().from(points).where(eq(points.id, pointId));
+  const point = pointRows[0];
+  if (!point) return;
+
+  // Если время не указали вручную — берём стандартные часы работы точки,
+  // чтобы не заполнять их каждый раз заново.
+  const plannedStart = type === "SHIFT" ? rawStart || point.defaultOpenTime : null;
+  const plannedEnd = type === "SHIFT" ? rawEnd || point.defaultCloseTime : null;
 
   for (const date of dates) {
     const shiftId = randomUUID();
