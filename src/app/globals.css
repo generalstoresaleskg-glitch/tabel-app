@@ -1,26 +1,121 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --background: #f4f5f7;
+  --foreground: #16181d;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: light;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+@layer components {
+  /* Buttons — each variant fully spelled out (Tailwind v4 @apply can't chain custom classes) */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-medium
+      whitespace-nowrap select-none transition-colors
+      bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 active:bg-indigo-800
+      disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-medium
+      whitespace-nowrap select-none transition-colors
+      bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 active:bg-slate-100
+      disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-medium
+      whitespace-nowrap select-none transition-colors
+      bg-red-600 text-white hover:bg-red-700 active:bg-red-800
+      disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-warning {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-medium
+      whitespace-nowrap select-none transition-colors
+      bg-amber-500 text-white hover:bg-amber-600 active:bg-amber-700
+      disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-medium
+      whitespace-nowrap select-none transition-colors
+      text-slate-600 hover:bg-slate-100 active:bg-slate-200
+      disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-link {
+    @apply inline-flex items-center gap-1 text-sm font-medium text-indigo-600 underline underline-offset-2
+      decoration-indigo-300 hover:text-indigo-800 hover:decoration-indigo-600;
+  }
+  .btn-link-danger {
+    @apply inline-flex items-center gap-1 text-sm font-medium text-red-600 underline underline-offset-2
+      decoration-red-300 hover:text-red-800 hover:decoration-red-600;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-[13px] rounded-md;
+  }
+
+  /* Form controls */
+  .field-label {
+    @apply block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5;
+  }
+  .input {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[15px] leading-6 text-slate-900
+      placeholder:text-slate-400 shadow-sm outline-none transition
+      focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100;
+  }
+  select.input {
+    @apply pr-8;
+  }
+  .checkbox {
+    @apply h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-200;
+  }
+
+  /* Surfaces */
+  .card {
+    @apply rounded-2xl border border-slate-200 bg-white shadow-sm;
+  }
+  .card-pad {
+    @apply rounded-2xl border border-slate-200 bg-white shadow-sm p-4 sm:p-5;
+  }
+
+  /* Badges */
+  .badge-neutral {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium bg-slate-100 text-slate-600;
+  }
+  .badge-success {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium bg-emerald-50 text-emerald-700;
+  }
+  .badge-warning {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium bg-amber-50 text-amber-700;
+  }
+  .badge-danger {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium bg-red-50 text-red-700;
+  }
+  .badge-brand {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium bg-indigo-50 text-indigo-700;
+  }
+
+  .page-title {
+    @apply text-2xl font-semibold tracking-tight text-slate-900;
+  }
+  .page-subtitle {
+    @apply text-sm text-slate-500 mt-0.5;
+  }
+  .section-title {
+    @apply font-semibold text-slate-900;
+  }
 }

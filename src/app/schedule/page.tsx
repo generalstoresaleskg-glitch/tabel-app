@@ -27,6 +27,7 @@ import {
   publishAnyway,
 } from "./actions";
 import { checkIn, checkOut, markVisit } from "./attendance-actions";
+import { DayCheckboxes } from "@/components/day-checkboxes";
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "Черновик",
@@ -35,16 +36,23 @@ const STATUS_LABEL: Record<string, string> = {
   published: "Опубликован",
 };
 
+const STATUS_BADGE: Record<string, string> = {
+  draft: "badge-neutral",
+  pending_owner: "badge-warning",
+  pending_employee: "badge-brand",
+  published: "badge-success",
+};
+
 function AckBadge({ shift }: { shift: ShiftRow["shift"] }) {
   if (shift.employeeAck === "confirmed")
-    return <div className="text-green-700">✓ подтвердил(а)</div>;
+    return <span className="badge-success">✓ подтвердил(а)</span>;
   if (shift.employeeAck === "question")
     return (
-      <div className="text-amber-700">
+      <span className="badge-warning">
         ? вопрос{shift.employeeComment ? `: ${shift.employeeComment}` : ""}
-      </div>
+      </span>
     );
-  return <div className="text-neutral-400">ожидает подтверждения</div>;
+  return <span className="badge-neutral">ожидает подтверждения</span>;
 }
 
 function AttendanceBadge({ row }: { row: ShiftRow }) {
@@ -56,7 +64,7 @@ function AttendanceBadge({ row }: { row: ShiftRow }) {
         ? ` (опоздание ${attendance.checkinLateMinutes} мин)`
         : "";
     return (
-      <div className="text-neutral-600">
+      <div className="text-slate-600">
         приход {formatTimeHHMM(attendance.checkinAt)}
         {late}
         {attendance.checkoutAt && (
@@ -67,7 +75,7 @@ function AttendanceBadge({ row }: { row: ShiftRow }) {
   }
   if (!attendance?.checkinAt) return null;
   return (
-    <div className="text-neutral-600">
+    <div className="text-slate-600">
       визит отмечен {formatTimeHHMM(attendance.checkinAt)}
     </div>
   );
@@ -87,9 +95,7 @@ function ShiftActions({
     if (attendance?.checkinAt) return null;
     return (
       <form action={markVisit.bind(null, shift.id)}>
-        <button className="text-sm bg-neutral-900 text-white rounded px-2 py-1 hover:bg-neutral-800">
-          Посетила точку
-        </button>
+        <button className="btn-primary btn-sm w-full">Посетила точку</button>
       </form>
     );
   }
@@ -97,18 +103,14 @@ function ShiftActions({
   if (!attendance?.checkinAt) {
     return (
       <form action={checkIn.bind(null, shift.id)}>
-        <button className="text-sm bg-neutral-900 text-white rounded px-2 py-1 hover:bg-neutral-800">
-          Я на месте
-        </button>
+        <button className="btn-primary btn-sm w-full">Я на месте</button>
       </form>
     );
   }
   if (!attendance.checkoutAt) {
     return (
       <form action={checkOut.bind(null, shift.id)}>
-        <button className="text-sm bg-neutral-700 text-white rounded px-2 py-1 hover:bg-neutral-600">
-          Я ухожу
-        </button>
+        <button className="btn-secondary btn-sm w-full">Я ухожу</button>
       </form>
     );
   }
@@ -153,46 +155,43 @@ export default async function SchedulePage({
     (r) => r.shift.employeeAck === "confirmed"
   ).length;
 
+  const dayOptions = dates.map((d, i) => ({
+    value: d,
+    label: `${weekdayShort(d)} ${formatDateHuman(d)}`,
+    isWeekend: i === 5 || i === 6,
+  }));
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-semibold">График на неделю</h1>
-          <p className="text-sm text-neutral-500">
-            {formatDateHuman(dates[0])}–{formatDateHuman(dates[6])}
+          <h1 className="page-title">График на неделю</h1>
+          <p className="page-subtitle flex flex-wrap items-center gap-2">
+            <span>
+              {formatDateHuman(dates[0])}–{formatDateHuman(dates[6])}
+            </span>
             {schedule && (
               <>
-                {" · "}
-                <span className="font-medium">
+                <span className={STATUS_BADGE[schedule.status]}>
                   {STATUS_LABEL[schedule.status]}
                 </span>
                 {schedule.status === "pending_employee" && (
-                  <span className="text-neutral-400">
-                    {" "}
-                    ({confirmedCount}/{totalCount} подтвердили)
+                  <span className="text-slate-400">
+                    {confirmedCount}/{totalCount} подтвердили
                   </span>
                 )}
               </>
             )}
           </p>
         </div>
-        <div className="flex gap-2 text-sm">
-          <Link
-            href={`/schedule?week=${prevWeek}`}
-            className="px-3 py-1.5 border rounded hover:bg-neutral-100"
-          >
+        <div className="flex gap-2">
+          <Link href={`/schedule?week=${prevWeek}`} className="btn-secondary btn-sm">
             ← Пред. неделя
           </Link>
-          <Link
-            href={`/schedule?week=${todayISO()}`}
-            className="px-3 py-1.5 border rounded hover:bg-neutral-100"
-          >
+          <Link href={`/schedule?week=${todayISO()}`} className="btn-secondary btn-sm">
             Сегодня
           </Link>
-          <Link
-            href={`/schedule?week=${nextWeek}`}
-            className="px-3 py-1.5 border rounded hover:bg-neutral-100"
-          >
+          <Link href={`/schedule?week=${nextWeek}`} className="btn-secondary btn-sm">
             След. неделя →
           </Link>
         </div>
@@ -200,61 +199,51 @@ export default async function SchedulePage({
 
       {!schedule && canManage && (
         <form action={createDraftForWeek.bind(null, weekStart)}>
-          <button className="bg-neutral-900 text-white rounded px-4 py-2 text-sm hover:bg-neutral-800">
-            Создать черновик графика на эту неделю
-          </button>
+          <button className="btn-primary">Создать черновик графика на эту неделю</button>
         </form>
       )}
       {!schedule && !canManage && (
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-slate-500">
           График на эту неделю ещё не составлен.
         </p>
       )}
 
       {schedule?.status === "draft" && schedule.ownerComment && (
-        <div className="text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded px-3 py-2">
+        <div className="text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
           Комментарий владельца: {schedule.ownerComment}
         </div>
       )}
 
       {myPending.length > 0 && (
-        <div className="border-2 border-neutral-900 rounded-lg p-4 bg-white space-y-3">
-          <h2 className="font-medium">Подтвердите свои задачи на неделю</h2>
+        <div className="card-pad border-2 border-indigo-500 space-y-3">
+          <h2 className="section-title">Подтвердите свои задачи на неделю</h2>
           {myPending.map((r) => (
             <div
               key={r.shift.id}
-              className="flex flex-wrap items-center gap-3 text-sm border-t pt-3 first:border-t-0 first:pt-0"
+              className="flex flex-wrap items-center gap-3 text-sm border-t border-slate-100 pt-3 first:border-t-0 first:pt-0"
             >
-              <span className="font-medium">
+              <span className="font-medium text-slate-900">
                 {weekdayShort(r.shift.date)} {formatDateHuman(r.shift.date)}
               </span>
-              <span>{r.point?.name}</span>
-              <span>
+              <span className="text-slate-600">{r.point?.name}</span>
+              <span className="text-slate-600">
                 {r.shift.type === "SHIFT"
                   ? `${r.shift.plannedStart}–${r.shift.plannedEnd}`
                   : `визит${r.shift.note ? ": " + r.shift.note : ""}`}
               </span>
               <form action={employeeAck.bind(null, r.shift.id, schedule!.id, "confirmed")}>
-                <button className="bg-neutral-900 text-white rounded px-3 py-1 hover:bg-neutral-800">
-                  Подтверждаю
-                </button>
+                <button className="btn-primary btn-sm">Подтверждаю</button>
               </form>
               <details className="inline-block">
-                <summary className="cursor-pointer text-amber-700 underline underline-offset-2">
+                <summary className="cursor-pointer text-sm text-amber-700 underline underline-offset-2">
                   Есть вопрос
                 </summary>
                 <form
                   action={employeeAck.bind(null, r.shift.id, schedule!.id, "question")}
                   className="flex gap-2 mt-2"
                 >
-                  <input
-                    name="comment"
-                    placeholder="В чём вопрос?"
-                    className="border rounded px-2 py-1 text-sm"
-                  />
-                  <button className="bg-amber-600 text-white rounded px-3 py-1">
-                    Отправить
-                  </button>
+                  <input name="comment" placeholder="В чём вопрос?" className="input" />
+                  <button className="btn-warning btn-sm">Отправить</button>
                 </form>
               </details>
             </div>
@@ -265,19 +254,16 @@ export default async function SchedulePage({
       {schedule && (
         <div className="grid grid-cols-1 sm:grid-cols-7 gap-2">
           {dates.map((d) => (
-            <div key={d} className="border rounded-lg bg-white p-2 min-h-[120px]">
-              <div className="text-xs font-medium text-neutral-500 mb-2">
+            <div key={d} className="card p-2.5 min-h-[130px]">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
                 {weekdayShort(d)} {formatDateHuman(d)}
               </div>
               <div className="space-y-2">
                 {byDate[d].map((r) => (
-                  <div
-                    key={r.shift.id}
-                    className="border rounded p-2 text-xs space-y-1 bg-neutral-50"
-                  >
-                    <div className="font-medium">{r.user?.name}</div>
-                    <div className="text-neutral-500">{r.point?.name}</div>
-                    <div>
+                  <div key={r.shift.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs space-y-1.5">
+                    <div className="font-medium text-slate-900">{r.user?.name}</div>
+                    <div className="text-slate-500">{r.point?.name}</div>
+                    <div className="text-slate-700">
                       {r.shift.type === "SHIFT"
                         ? `${r.shift.plannedStart}–${r.shift.plannedEnd}`
                         : `Визит${r.shift.note ? ": " + r.shift.note : ""}`}
@@ -288,16 +274,15 @@ export default async function SchedulePage({
                     {canManage &&
                       (schedule.status === "draft" ||
                         schedule.status === "published") && (
-                        <form
-                          action={deleteShift.bind(null, r.shift.id, schedule.id)}
-                        >
-                          <button className="text-red-600 underline underline-offset-2">
-                            удалить
-                          </button>
+                        <form action={deleteShift.bind(null, r.shift.id, schedule.id)}>
+                          <button className="btn-link-danger !text-xs">удалить</button>
                         </form>
                       )}
                   </div>
                 ))}
+                {byDate[d].length === 0 && (
+                  <div className="text-xs text-slate-300">—</div>
+                )}
               </div>
             </div>
           ))}
@@ -305,78 +290,70 @@ export default async function SchedulePage({
       )}
 
       {schedule && canManage && (schedule.status === "draft" || schedule.status === "published") && (
-        <div className="border rounded-lg p-4 bg-white">
-          <h2 className="font-medium mb-3">Добавить смену / визит-задачу</h2>
-          <form
-            action={addShift.bind(null, schedule.id)}
-            className="grid sm:grid-cols-[1.3fr_1.3fr_1fr_1fr_1fr_1fr_auto] gap-3 items-end"
-          >
-            <div className="space-y-1">
-              <label className="text-xs text-neutral-500">Сотрудник</label>
-              <select name="userId" required className="w-full border rounded px-2 py-1.5 text-sm">
-                {activeUsers.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
+        <div className="card-pad space-y-4">
+          <h2 className="section-title">Добавить смену / визит-задачу</h2>
+          <form action={addShift.bind(null, schedule.id)} className="space-y-4">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="field-label">Сотрудник</label>
+                <select name="userId" required className="input">
+                  {activeUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="field-label">Точка</label>
+                <select name="pointId" required className="input">
+                  {activePoints.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-neutral-500">Точка</label>
-              <select name="pointId" required className="w-full border rounded px-2 py-1.5 text-sm">
-                {activePoints.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+
+            <div>
+              <label className="field-label">Дни недели (можно выбрать несколько)</label>
+              <DayCheckboxes days={dayOptions} />
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-neutral-500">Дата</label>
-              <select name="date" required className="w-full border rounded px-2 py-1.5 text-sm">
-                {dates.map((d) => (
-                  <option key={d} value={d}>
-                    {weekdayShort(d)} {formatDateHuman(d)}
-                  </option>
-                ))}
-              </select>
+
+            <div className="grid sm:grid-cols-3 gap-3">
+              <div>
+                <label className="field-label">Тип</label>
+                <select name="type" className="input">
+                  <option value="SHIFT">Смена</option>
+                  <option value="VISIT">Визит-задача</option>
+                </select>
+              </div>
+              <div>
+                <label className="field-label">Начало</label>
+                <input type="time" name="plannedStart" className="input" />
+              </div>
+              <div>
+                <label className="field-label">Конец / примечание</label>
+                <input name="detail" placeholder="18:00 или текст для визита" className="input" />
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-neutral-500">Тип</label>
-              <select name="type" className="w-full border rounded px-2 py-1.5 text-sm">
-                <option value="SHIFT">Смена</option>
-                <option value="VISIT">Визит-задача</option>
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-neutral-500">Начало</label>
-              <input type="time" name="plannedStart" className="w-full border rounded px-2 py-1.5 text-sm" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-neutral-500">Конец / примечание</label>
-              <input
-                name="detail"
-                placeholder="18:00 или текст для визита"
-                className="w-full border rounded px-2 py-1.5 text-sm"
-              />
-            </div>
-            <button
-              type="submit"
-              className="text-sm bg-neutral-900 text-white rounded px-3 py-1.5 hover:bg-neutral-800"
-            >
-              Добавить
+
+            <button type="submit" className="btn-primary">
+              Добавить на выбранные дни
             </button>
           </form>
-          <p className="text-xs text-neutral-400 mt-2">
+          <p className="text-xs text-slate-400">
             Для визит-задачи укажите тип «Визит-задача» — поля времени можно оставить пустыми, а в поле
-            «Конец / примечание» написать, что за задача (например, «съёмка контента»).
+            «Конец / примечание» написать, что за задача (например, «съёмка контента»). Отметьте галочками
+            все дни, на которые нужна эта смена — сотрудник и точка одинаковые, задачи создадутся сразу на все выбранные дни.
           </p>
         </div>
       )}
 
       {schedule?.status === "draft" && canManage && (
         <form action={submitForApproval.bind(null, schedule.id)}>
-          <button className="bg-neutral-900 text-white rounded px-4 py-2 text-sm hover:bg-neutral-800">
+          <button className="btn-primary">
             {me.role === "owner"
               ? "Отправить сотрудникам на подтверждение"
               : "Отправить на утверждение владельцу"}
@@ -385,29 +362,21 @@ export default async function SchedulePage({
       )}
 
       {schedule?.status === "pending_owner" && me.role === "owner" && (
-        <div className="border rounded-lg p-4 bg-white space-y-3">
-          <h2 className="font-medium">График ожидает вашего утверждения</h2>
+        <div className="card-pad space-y-3">
+          <h2 className="section-title">График ожидает вашего утверждения</h2>
           <form action={ownerApprove.bind(null, schedule.id)}>
-            <button className="bg-neutral-900 text-white rounded px-4 py-2 text-sm hover:bg-neutral-800">
-              Утвердить график
-            </button>
+            <button className="btn-primary">Утвердить график</button>
           </form>
           <form action={ownerReject.bind(null, schedule.id)} className="flex gap-2">
-            <input
-              name="comment"
-              placeholder="Комментарий, что нужно поправить"
-              className="border rounded px-2 py-1.5 text-sm flex-1"
-            />
-            <button className="bg-amber-600 text-white rounded px-3 py-1.5 text-sm hover:bg-amber-700">
-              Вернуть на доработку
-            </button>
+            <input name="comment" placeholder="Комментарий, что нужно поправить" className="input flex-1" />
+            <button className="btn-warning">Вернуть на доработку</button>
           </form>
         </div>
       )}
 
       {schedule?.status === "pending_employee" && canManage && myPending.length === 0 && (
         <form action={publishAnyway.bind(null, schedule.id)}>
-          <button className="bg-neutral-700 text-white rounded px-4 py-2 text-sm hover:bg-neutral-600">
+          <button className="btn-secondary">
             Опубликовать сейчас (не дожидаясь всех подтверждений)
           </button>
         </form>

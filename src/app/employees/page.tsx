@@ -25,8 +25,8 @@ export default async function EmployeesPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold">Сотрудники</h1>
-        <p className="text-sm text-neutral-500">
+        <h1 className="page-title">Сотрудники</h1>
+        <p className="page-subtitle">
           {isOwner
             ? "Полное управление сотрудниками и их ролями."
             : "Вы можете создавать и редактировать рядовых сотрудников. Владельца и других управляющих редактирует только владелец."}
@@ -34,10 +34,11 @@ export default async function EmployeesPage() {
       </div>
 
       {readOnly.length > 0 && (
-        <div className="border rounded-lg p-4 bg-neutral-100 text-sm text-neutral-600">
+        <div className="card-pad bg-slate-50 text-sm text-slate-600 space-y-1">
           {readOnly.map((u) => (
             <div key={u.id}>
-              {u.name} — {ROLE_LABEL[u.role]} (логин: {u.login})
+              <span className="font-medium text-slate-800">{u.name}</span> —{" "}
+              {ROLE_LABEL[u.role]} (логин: {u.login})
             </div>
           ))}
         </div>
@@ -45,137 +46,97 @@ export default async function EmployeesPage() {
 
       <div className="grid gap-4">
         {editable.map((u) => (
-          <div
-            key={u.id}
-            className={`border rounded-lg p-4 bg-white space-y-3 ${
-              u.active ? "" : "opacity-50"
-            }`}
-          >
+          <div key={u.id} className={`card-pad space-y-4 ${u.active ? "" : "opacity-60"}`}>
             <form
               action={updateEmployee.bind(null, u.id)}
-              className="grid sm:grid-cols-[2fr_1.5fr_1.5fr_1fr_auto] gap-3 items-end"
+              className="grid sm:grid-cols-[2fr_1.5fr_1.5fr_1fr_auto] gap-3 sm:items-end"
             >
-              <div className="space-y-1">
-                <label className="text-xs text-neutral-500">Имя</label>
-                <input
-                  name="name"
-                  defaultValue={u.name}
-                  required
-                  className="w-full border rounded px-2 py-1.5 text-sm"
-                />
+              <div>
+                <label className="field-label">Имя</label>
+                <input name="name" defaultValue={u.name} required className="input" />
               </div>
-              <div className="space-y-1">
-                <label className="text-xs text-neutral-500">Телефон</label>
-                <input
-                  name="phone"
-                  defaultValue={u.phone ?? ""}
-                  className="w-full border rounded px-2 py-1.5 text-sm"
-                />
+              <div>
+                <label className="field-label">Телефон</label>
+                <input name="phone" defaultValue={u.phone ?? ""} className="input" />
               </div>
-              <div className="space-y-1">
-                <label className="text-xs text-neutral-500">Логин</label>
-                <input
-                  name="login"
-                  defaultValue={u.login}
-                  required
-                  className="w-full border rounded px-2 py-1.5 text-sm"
-                />
+              <div>
+                <label className="field-label">Логин</label>
+                <input name="login" defaultValue={u.login} required className="input" />
               </div>
-              <div className="space-y-1">
-                <label className="text-xs text-neutral-500">Роль</label>
+              <div>
+                <label className="field-label">Роль</label>
                 {isOwner ? (
-                  <select
-                    name="role"
-                    defaultValue={u.role}
-                    className="w-full border rounded px-2 py-1.5 text-sm"
-                  >
+                  <select name="role" defaultValue={u.role} className="input">
                     <option value="owner">Владелец</option>
                     <option value="manager">Управляющая</option>
                     <option value="employee">Сотрудник</option>
                   </select>
                 ) : (
-                  <div className="text-sm py-1.5">{ROLE_LABEL[u.role]}</div>
+                  <div className="text-sm py-2 text-slate-700">{ROLE_LABEL[u.role]}</div>
                 )}
               </div>
-              <button
-                type="submit"
-                className="text-sm bg-neutral-900 text-white rounded px-3 py-1.5 hover:bg-neutral-800"
-              >
+              <button type="submit" className="btn-primary btn-sm">
                 Сохранить
               </button>
             </form>
 
-            <div className="flex flex-wrap items-center gap-3 text-sm">
-              <form
-                action={resetPassword.bind(null, u.id)}
-                className="flex items-center gap-2"
-              >
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-4">
+              <form action={resetPassword.bind(null, u.id)} className="flex items-center gap-2">
                 <input
                   name="password"
                   type="password"
                   placeholder="Новый пароль"
                   minLength={4}
-                  className="border rounded px-2 py-1 text-sm"
+                  className="input !w-44 !py-1.5 text-sm"
                 />
-                <button className="text-neutral-600 underline underline-offset-2 hover:text-neutral-900">
-                  Сменить пароль
-                </button>
+                <button className="btn-link">Сменить пароль</button>
               </form>
               <form action={toggleEmployeeActive.bind(null, u.id, !u.active)}>
-                <button className="text-neutral-600 underline underline-offset-2 hover:text-neutral-900">
+                <button className="btn-link">
                   {u.active ? "Деактивировать" : "Активировать"}
                 </button>
               </form>
-              {!u.active && <span className="text-neutral-400">неактивен</span>}
+              {!u.active && <span className="badge-neutral">неактивен</span>}
             </div>
           </div>
         ))}
       </div>
 
-      <div className="border rounded-lg p-4 bg-white">
-        <h2 className="font-medium mb-3">Добавить сотрудника</h2>
+      <div className="card-pad">
+        <h2 className="section-title mb-4">Добавить сотрудника</h2>
         <form
           action={createEmployee}
-          className="grid sm:grid-cols-[2fr_1.5fr_1.5fr_1.5fr_1fr_auto] gap-3 items-end"
+          className="grid sm:grid-cols-[2fr_1.5fr_1.5fr_1.5fr_1fr_auto] gap-3 sm:items-end"
         >
-          <div className="space-y-1">
-            <label className="text-xs text-neutral-500">Имя</label>
-            <input name="name" required className="w-full border rounded px-2 py-1.5 text-sm" />
+          <div>
+            <label className="field-label">Имя</label>
+            <input name="name" required className="input" />
           </div>
-          <div className="space-y-1">
-            <label className="text-xs text-neutral-500">Телефон</label>
-            <input name="phone" className="w-full border rounded px-2 py-1.5 text-sm" />
+          <div>
+            <label className="field-label">Телефон</label>
+            <input name="phone" className="input" />
           </div>
-          <div className="space-y-1">
-            <label className="text-xs text-neutral-500">Логин</label>
-            <input name="login" required className="w-full border rounded px-2 py-1.5 text-sm" />
+          <div>
+            <label className="field-label">Логин</label>
+            <input name="login" required className="input" />
           </div>
-          <div className="space-y-1">
-            <label className="text-xs text-neutral-500">Пароль</label>
-            <input
-              name="password"
-              type="password"
-              required
-              minLength={4}
-              className="w-full border rounded px-2 py-1.5 text-sm"
-            />
+          <div>
+            <label className="field-label">Пароль</label>
+            <input name="password" type="password" required minLength={4} className="input" />
           </div>
-          <div className="space-y-1">
-            <label className="text-xs text-neutral-500">Роль</label>
+          <div>
+            <label className="field-label">Роль</label>
             {isOwner ? (
-              <select name="role" defaultValue="employee" className="w-full border rounded px-2 py-1.5 text-sm">
+              <select name="role" defaultValue="employee" className="input">
                 <option value="owner">Владелец</option>
                 <option value="manager">Управляющая</option>
                 <option value="employee">Сотрудник</option>
               </select>
             ) : (
-              <div className="text-sm py-1.5 text-neutral-500">Сотрудник</div>
+              <div className="text-sm py-2 text-slate-500">Сотрудник</div>
             )}
           </div>
-          <button
-            type="submit"
-            className="text-sm bg-neutral-900 text-white rounded px-3 py-1.5 hover:bg-neutral-800"
-          >
+          <button type="submit" className="btn-primary btn-sm">
             Добавить
           </button>
         </form>

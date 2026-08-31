@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { auth, signOut } from "@/auth";
-import Link from "next/link";
+import { NavLink } from "@/components/nav-link";
 
 export const metadata: Metadata = {
   title: "Табель — график и учёт рабочего времени",
@@ -24,48 +24,50 @@ export default async function RootLayout({
 
   return (
     <html lang="ru" className="h-full">
-      <body className="min-h-full flex flex-col bg-neutral-50 text-neutral-900">
+      <body className="min-h-full flex flex-col bg-[var(--background)] text-slate-900">
         {user && (
-          <header className="border-b bg-white">
-            <div className="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
-              <span className="font-semibold text-neutral-800">Табель</span>
-              <nav className="flex flex-wrap gap-4 text-sm text-neutral-600">
-                <Link href="/schedule" className="hover:text-neutral-900">
-                  График
-                </Link>
-                <Link href="/tabel" className="hover:text-neutral-900">
-                  Табель
-                </Link>
+          <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
+            <div className="max-w-5xl mx-auto px-4 sm:px-6">
+              <div className="flex items-center gap-3 py-3">
+                <div className="flex items-center gap-2 font-semibold text-slate-900">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-sm font-bold text-white">
+                    Т
+                  </span>
+                  <span className="hidden sm:inline">Табель</span>
+                </div>
+
+                <div className="ml-auto flex items-center gap-3">
+                  <span className="hidden sm:block text-sm text-slate-500 text-right leading-tight">
+                    <span className="block font-medium text-slate-700">
+                      {user.name}
+                    </span>
+                    <span>{ROLE_LABEL[user.role] ?? user.role}</span>
+                  </span>
+                  <form
+                    action={async () => {
+                      "use server";
+                      await signOut({ redirectTo: "/login" });
+                    }}
+                  >
+                    <button className="btn-ghost btn-sm">Выйти</button>
+                  </form>
+                </div>
+              </div>
+
+              <nav className="flex flex-wrap items-center gap-1.5 overflow-x-auto pb-3 -mx-1 px-1">
+                <NavLink href="/schedule">График</NavLink>
+                <NavLink href="/tabel">Табель</NavLink>
                 {(user.role === "owner" || user.role === "manager") && (
-                  <Link href="/employees" className="hover:text-neutral-900">
-                    Сотрудники
-                  </Link>
+                  <NavLink href="/employees">Сотрудники</NavLink>
                 )}
                 {user.role === "owner" && (
-                  <Link href="/points" className="hover:text-neutral-900">
-                    Точки
-                  </Link>
+                  <NavLink href="/points">Точки</NavLink>
                 )}
               </nav>
-              <div className="ml-auto flex items-center gap-3 text-sm">
-                <span className="text-neutral-500">
-                  {user.name} · {ROLE_LABEL[user.role] ?? user.role}
-                </span>
-                <form
-                  action={async () => {
-                    "use server";
-                    await signOut({ redirectTo: "/login" });
-                  }}
-                >
-                  <button className="text-neutral-500 hover:text-neutral-900 underline underline-offset-2">
-                    Выйти
-                  </button>
-                </form>
-              </div>
             </div>
           </header>
         )}
-        <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-6">
+        <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6">
           {children}
         </main>
       </body>

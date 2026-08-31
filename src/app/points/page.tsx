@@ -13,134 +13,90 @@ export default async function PointsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-semibold">Точки (филиалы)</h1>
-        <p className="text-sm text-neutral-500">
+        <h1 className="page-title">Точки (филиалы)</h1>
+        <p className="page-subtitle">
           Управление точками доступно только владельцу.
         </p>
       </div>
 
       <div className="grid gap-4">
         {allPoints.map((p) => (
-          <div
-            key={p.id}
-            className={`border rounded-lg p-4 bg-white ${
-              p.active ? "" : "opacity-50"
-            }`}
-          >
+          <div key={p.id} className={`card-pad ${p.active ? "" : "opacity-60"}`}>
             <form
               action={updatePoint.bind(null, p.id)}
-              className="grid sm:grid-cols-[2fr_2fr_1fr_1fr_auto] gap-3 items-end"
+              className="grid sm:grid-cols-[2fr_2fr_1fr_1fr_auto] gap-3 sm:items-end"
             >
-              <div className="space-y-1">
-                <label className="text-xs text-neutral-500">Название</label>
-                <input
-                  name="name"
-                  defaultValue={p.name}
-                  required
-                  className="w-full border rounded px-2 py-1.5 text-sm"
-                />
+              <div>
+                <label className="field-label">Название</label>
+                <input name="name" defaultValue={p.name} required className="input" />
               </div>
-              <div className="space-y-1">
-                <label className="text-xs text-neutral-500">Адрес</label>
-                <input
-                  name="address"
-                  defaultValue={p.address ?? ""}
-                  className="w-full border rounded px-2 py-1.5 text-sm"
-                />
+              <div>
+                <label className="field-label">Адрес</label>
+                <input name="address" defaultValue={p.address ?? ""} className="input" />
               </div>
-              <div className="space-y-1">
-                <label className="text-xs text-neutral-500">Открытие</label>
+              <div>
+                <label className="field-label">Открытие</label>
                 <input
                   type="time"
                   name="defaultOpenTime"
                   defaultValue={p.defaultOpenTime}
                   required
-                  className="w-full border rounded px-2 py-1.5 text-sm"
+                  className="input"
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-xs text-neutral-500">Закрытие</label>
+              <div>
+                <label className="field-label">Закрытие</label>
                 <input
                   type="time"
                   name="defaultCloseTime"
                   defaultValue={p.defaultCloseTime}
                   required
-                  className="w-full border rounded px-2 py-1.5 text-sm"
+                  className="input"
                 />
               </div>
-              <button
-                type="submit"
-                className="text-sm bg-neutral-900 text-white rounded px-3 py-1.5 hover:bg-neutral-800"
-              >
+              <button type="submit" className="btn-primary btn-sm">
                 Сохранить
               </button>
             </form>
 
-            <div className="mt-3 flex gap-3 text-sm">
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
               <form action={togglePointActive.bind(null, p.id, !p.active)}>
-                <button className="text-neutral-600 underline underline-offset-2 hover:text-neutral-900">
+                <button className="btn-link">
                   {p.active ? "Деактивировать" : "Активировать"}
                 </button>
               </form>
               <form action={deletePoint.bind(null, p.id)}>
-                <button className="text-red-600 underline underline-offset-2 hover:text-red-800">
-                  Удалить
-                </button>
+                <button className="btn-link-danger">Удалить</button>
               </form>
-              {!p.active && (
-                <span className="text-neutral-400">точка неактивна</span>
-              )}
+              {!p.active && <span className="badge-neutral">точка неактивна</span>}
             </div>
           </div>
         ))}
       </div>
 
-      <div className="border rounded-lg p-4 bg-white">
-        <h2 className="font-medium mb-3">Добавить точку</h2>
+      <div className="card-pad">
+        <h2 className="section-title mb-4">Добавить точку</h2>
         <form
           action={createPoint}
-          className="grid sm:grid-cols-[2fr_2fr_1fr_1fr_auto] gap-3 items-end"
+          className="grid sm:grid-cols-[2fr_2fr_1fr_1fr_auto] gap-3 sm:items-end"
         >
-          <div className="space-y-1">
-            <label className="text-xs text-neutral-500">Название</label>
-            <input
-              name="name"
-              required
-              placeholder="Например, Достук"
-              className="w-full border rounded px-2 py-1.5 text-sm"
-            />
+          <div>
+            <label className="field-label">Название</label>
+            <input name="name" required placeholder="Например, Достук" className="input" />
           </div>
-          <div className="space-y-1">
-            <label className="text-xs text-neutral-500">Адрес</label>
-            <input
-              name="address"
-              className="w-full border rounded px-2 py-1.5 text-sm"
-            />
+          <div>
+            <label className="field-label">Адрес</label>
+            <input name="address" className="input" />
           </div>
-          <div className="space-y-1">
-            <label className="text-xs text-neutral-500">Открытие</label>
-            <input
-              type="time"
-              name="defaultOpenTime"
-              defaultValue="09:00"
-              required
-              className="w-full border rounded px-2 py-1.5 text-sm"
-            />
+          <div>
+            <label className="field-label">Открытие</label>
+            <input type="time" name="defaultOpenTime" defaultValue="09:00" required className="input" />
           </div>
-          <div className="space-y-1">
-            <label className="text-xs text-neutral-500">Закрытие</label>
-            <input
-              type="time"
-              name="defaultCloseTime"
-              defaultValue="19:00"
-              required
-              className="w-full border rounded px-2 py-1.5 text-sm"
-            />
+          <div>
+            <label className="field-label">Закрытие</label>
+            <input type="time" name="defaultCloseTime" defaultValue="19:00" required className="input" />
           </div>
-          <button
-            type="submit"
-            className="text-sm bg-neutral-900 text-white rounded px-3 py-1.5 hover:bg-neutral-800"
-          >
+          <button type="submit" className="btn-primary btn-sm">
             Добавить
           </button>
         </form>

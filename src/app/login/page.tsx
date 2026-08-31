@@ -29,26 +29,26 @@ export default async function LoginPage({
   const { error } = await searchParams;
 
   return (
-    <div className="min-h-[70vh] flex items-center justify-center">
-      <form
-        action={loginAction}
-        className="w-full max-w-sm bg-white border rounded-lg p-6 shadow-sm space-y-4"
-      >
-        <div>
-          <h1 className="text-lg font-semibold text-neutral-900">Вход</h1>
-          <p className="text-sm text-neutral-500">
+    <div className="min-h-[80vh] flex items-center justify-center px-4">
+      <form action={loginAction} className="w-full max-w-sm card-pad space-y-5">
+        <div className="space-y-1 text-center">
+          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 text-lg font-bold text-white">
+            Т
+          </span>
+          <h1 className="page-title !text-xl pt-2">Вход в систему</h1>
+          <p className="text-sm text-slate-500">
             График работы и табель сотрудников
           </p>
         </div>
 
         {error && (
-          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
             Неверный логин или пароль
           </p>
         )}
 
-        <div className="space-y-1">
-          <label className="text-sm text-neutral-700" htmlFor="login">
+        <div>
+          <label className="field-label" htmlFor="login">
             Логин
           </label>
           <input
@@ -56,12 +56,13 @@ export default async function LoginPage({
             name="login"
             required
             autoFocus
-            className="w-full border rounded px-3 py-2 text-sm"
+            autoComplete="username"
+            className="input"
           />
         </div>
 
-        <div className="space-y-1">
-          <label className="text-sm text-neutral-700" htmlFor="password">
+        <div>
+          <label className="field-label" htmlFor="password">
             Пароль
           </label>
           <input
@@ -69,14 +70,12 @@ export default async function LoginPage({
             name="password"
             type="password"
             required
-            className="w-full border rounded px-3 py-2 text-sm"
+            autoComplete="current-password"
+            className="input"
           />
         </div>
 
-        <button
-          type="submit"
-          className="w-full bg-neutral-900 text-white rounded py-2 text-sm font-medium hover:bg-neutral-800"
-        >
+        <button type="submit" className="btn-primary w-full">
           Войти
         </button>
       </form>

@@ -56,14 +56,17 @@ export async function addShift(scheduleId: string, formData: FormData) {
   const pointId = String(formData.get("pointId") ?? "");
   const userId = String(formData.get("userId") ?? "");
   const type = String(formData.get("type") ?? "SHIFT") as "SHIFT" | "VISIT";
-  const date = String(formData.get("date") ?? "");
+  const selectedDates = formData.getAll("dates").map(String).filter(Boolean);
   const plannedStart = String(formData.get("plannedStart") ?? "") || null;
   const detail = String(formData.get("detail") ?? "").trim() || null;
   const plannedEnd = type === "SHIFT" ? detail : null;
   const note = type === "VISIT" ? detail : null;
 
-  if (!pointId || !userId || !date) return;
-  if (!weekDates(schedule.weekStart).includes(date)) return;
+  if (!pointId || !userId || selectedDates.length === 0) return;
+
+  const validDates = new Set(weekDates(schedule.weekStart));
+  const dates = selectedDates.filter((d) => validDates.has(d));
+  if (dates.length === 0) return;
 
   // Владелец не работает по графику — на всякий случай проверяем и на сервере,
   // а не только скрываем в выпадающем списке.
@@ -71,27 +74,29 @@ export async function addShift(scheduleId: string, formData: FormData) {
   const targetUser = targetUserRows[0];
   if (!targetUser || targetUser.role === "owner") return;
 
-  const shiftId = randomUUID();
-  await db.insert(shifts).values({
-    id: shiftId,
-    scheduleId,
-    pointId,
-    userId,
-    type,
-    date,
-    plannedStart: type === "SHIFT" ? plannedStart : null,
-    plannedEnd: type === "SHIFT" ? plannedEnd : null,
-    note: type === "VISIT" ? note : null,
-    employeeAck: "pending",
-  });
-
-  if (schedule.status === "published") {
-    await logChange(
+  for (const date of dates) {
+    const shiftId = randomUUID();
+    await db.insert(shifts).values({
+      id: shiftId,
       scheduleId,
-      shiftId,
-      me.id,
-      `Добавлена ${type === "SHIFT" ? "смена" : "визит-задача"} на ${date}`
-    );
+      pointId,
+      userId,
+      type,
+      date,
+      plannedStart: type === "SHIFT" ? plannedStart : null,
+      plannedEnd: type === "SHIFT" ? plannedEnd : null,
+      note: type === "VISIT" ? note : null,
+      employeeAck: "pending",
+    });
+
+    if (schedule.status === "published") {
+      await logChange(
+        scheduleId,
+        shiftId,
+        me.id,
+        `Добавлена ${type === "SHIFT" ? "смена" : "визит-задача"} на ${date}`
+      );
+    }
   }
 
   revalidatePath("/schedule");
