@@ -14,6 +14,8 @@ import {
   getShiftsWithDetails,
   getAllActivePoints,
   getAssignableUsers,
+  getWeeksNeedingMyConfirmation,
+  getWeeksAwaitingOwnerApproval,
   ShiftRow,
 } from "@/lib/schedule-queries";
 import {
@@ -84,7 +86,7 @@ function AckBadge({ shift }: { shift: ShiftRow["shift"] }) {
         ? вопрос{shift.employeeComment ? `: ${shift.employeeComment}` : ""}
       </span>
     );
-  return <span className="badge-neutral">ожидает подтверждения</span>;
+  return <span className="badge-neutral">ожидает</span>;
 }
 
 function AttendanceBadge({ row }: { row: ShiftRow }) {
@@ -151,50 +153,33 @@ function ShiftActions({
 
 // Переключатель "Смена / Визит-задача" — чистый CSS (.type-toggle в globals.css),
 // работает без единой строчки JS и одинаково для любого числа форм на странице.
-function ShiftTypeFields({ idPrefix }: { idPrefix: string }) {
+function ShiftTypeFields({ idPrefix, small }: { idPrefix: string; small?: boolean }) {
+  const size = small ? "!py-1 !text-[11px]" : "";
   return (
-    <div className="type-toggle space-y-3">
-      <div className="flex gap-2">
-        <label htmlFor={`${idPrefix}-shift`} className="type-option">
-          <input
-            id={`${idPrefix}-shift`}
-            type="radio"
-            name="type"
-            value="SHIFT"
-            defaultChecked
-            className="sr-only"
-          />
+    <div className="type-toggle space-y-2">
+      <div className="flex gap-1.5">
+        <label htmlFor={`${idPrefix}-shift`} className={`type-option ${small ? "!px-2 !py-1 !text-[11px]" : ""}`}>
+          <input id={`${idPrefix}-shift`} type="radio" name="type" value="SHIFT" defaultChecked className="sr-only" />
           Смена
         </label>
-        <label htmlFor={`${idPrefix}-visit`} className="type-option">
-          <input
-            id={`${idPrefix}-visit`}
-            type="radio"
-            name="type"
-            value="VISIT"
-            className="sr-only"
-          />
-          Визит-задача
+        <label htmlFor={`${idPrefix}-visit`} className={`type-option ${small ? "!px-2 !py-1 !text-[11px]" : ""}`}>
+          <input id={`${idPrefix}-visit`} type="radio" name="type" value="VISIT" className="sr-only" />
+          Визит
         </label>
       </div>
 
-      <div className="shift-only grid sm:grid-cols-2 gap-3">
-        <div>
-          <label className="field-label">Начало</label>
-          <input type="time" name="plannedStart" className="input" />
-        </div>
-        <div>
-          <label className="field-label">Конец</label>
-          <input type="time" name="plannedEnd" className="input" />
-        </div>
-        <p className="text-xs text-slate-400 sm:col-span-2">
-          Оставьте пустым — подставятся стандартные часы работы выбранной точки.
-        </p>
+      <div className={`shift-only grid ${small ? "grid-cols-2 gap-1.5" : "sm:grid-cols-2 gap-3"}`}>
+        <input type="time" name="plannedStart" placeholder="начало" className={`input ${size}`} />
+        <input type="time" name="plannedEnd" placeholder="конец" className={`input ${size}`} />
+        {!small && (
+          <p className="text-xs text-slate-400 sm:col-span-2">
+            Оставьте пустым — подставятся стандартные часы работы точки.
+          </p>
+        )}
       </div>
 
       <div className="visit-only">
-        <label className="field-label">Примечание</label>
-        <input name="note" placeholder="Например, съёмка контента" className="input" />
+        <input name="note" placeholder="Что за задача" className={`input ${size}`} />
       </div>
     </div>
   );
@@ -215,7 +200,7 @@ export default async function SchedulePage({
   const shiftRows = schedule ? await getShiftsWithDetails(schedule.id) : [];
   const canManage = me.role === "owner" || me.role === "manager";
 
-  const activePoints = canManage ? await getAllActivePoints() : [];
+  const allPoints = await getAllActivePoints();
   const activeUsers = canManage ? await getAssignableUsers() : [];
 
   const prevWeek = addDays(weekStart, -7);
@@ -271,6 +256,16 @@ export default async function SchedulePage({
       ? "Будущая неделя"
       : "Прошедшая неделя";
 
+  // Напоминания про графики на ДРУГИХ неделях — чтобы подтверждение/утверждение
+  // не терялось, если по умолчанию открыта не та неделя.
+  const weeksNeedingMyConfirmation = !canManage
+    ? (await getWeeksNeedingMyConfirmation(me.id)).filter((w) => w !== weekStart)
+    : [];
+  const weeksAwaitingOwnerApproval =
+    me.role === "owner"
+      ? (await getWeeksAwaitingOwnerApproval()).filter((w) => w !== weekStart)
+      : [];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -279,20 +274,6 @@ export default async function SchedulePage({
           <h1 className="page-title mt-1">
             {formatDateHuman(dates[0])}–{formatDateHuman(dates[6])}
           </h1>
-          <p className="page-subtitle flex flex-wrap items-center gap-2">
-            {schedule && (
-              <>
-                <span className={STATUS_BADGE[schedule.status]}>
-                  {STATUS_LABEL[schedule.status]}
-                </span>
-                {schedule.status === "pending_employee" && (
-                  <span className="text-slate-400">
-                    {confirmedCount}/{totalCount} подтвердили
-                  </span>
-                )}
-              </>
-            )}
-          </p>
         </div>
         <div className="flex gap-2">
           <Link href={`/schedule?week=${prevWeek}`} className="btn-secondary btn-sm">
@@ -307,24 +288,104 @@ export default async function SchedulePage({
         </div>
       </div>
 
-      {!schedule && canManage && (
-        <div className="flex flex-wrap gap-2">
-          <form action={createDraftForWeek.bind(null, weekStart)}>
-            <button className="btn-primary">Создать черновик графика на эту неделю</button>
-          </form>
-          {canCopyPrevWeek && (
-            <form action={copyPreviousWeek.bind(null, weekStart)}>
-              <button className="btn-secondary">
-                Скопировать график с прошлой недели
+      {weeksNeedingMyConfirmation.map((w) => (
+        <div
+          key={w}
+          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
+        >
+          <span>
+            У вас есть неподтверждённые задачи на неделе {formatDateHuman(w)}–
+            {formatDateHuman(addDays(w, 6))}.
+          </span>
+          <Link href={`/schedule?week=${w}`} className="btn-primary btn-sm">
+            Перейти и подтвердить
+          </Link>
+        </div>
+      ))}
+      {weeksAwaitingOwnerApproval.map((w) => (
+        <div
+          key={w}
+          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          <span>
+            Черновик на неделе {formatDateHuman(w)}–{formatDateHuman(addDays(w, 6))} ждёт вашего
+            утверждения.
+          </span>
+          <Link href={`/schedule?week=${w}`} className="btn-primary btn-sm">
+            Перейти и утвердить
+          </Link>
+        </div>
+      ))}
+
+      {/* Единая панель управления графиком этой недели — вся логика статуса здесь,
+          а не отдельными кнопками в разных местах страницы. */}
+      {canManage && (
+        <div className="card-pad flex flex-wrap items-center gap-3">
+          {!schedule && (
+            <>
+              <span className="text-sm text-slate-500">Графика на эту неделю ещё нет.</span>
+              <form action={createDraftForWeek.bind(null, weekStart)}>
+                <button className="btn-primary btn-sm">Создать черновик</button>
+              </form>
+              {canCopyPrevWeek && (
+                <form action={copyPreviousWeek.bind(null, weekStart)}>
+                  <button className="btn-secondary btn-sm">Скопировать с прошлой недели</button>
+                </form>
+              )}
+            </>
+          )}
+
+          {schedule && (
+            <span className={STATUS_BADGE[schedule.status]}>{STATUS_LABEL[schedule.status]}</span>
+          )}
+
+          {schedule?.status === "draft" && (
+            <form action={submitForApproval.bind(null, schedule.id)}>
+              <button className="btn-primary btn-sm">
+                {me.role === "owner"
+                  ? "Отправить сотрудникам на подтверждение"
+                  : "Отправить на утверждение владельцу"}
               </button>
             </form>
           )}
+
+          {schedule?.status === "pending_owner" && me.role === "owner" && (
+            <>
+              <form action={ownerApprove.bind(null, schedule.id)}>
+                <button className="btn-primary btn-sm">Утвердить график</button>
+              </form>
+              <form action={ownerReject.bind(null, schedule.id)} className="flex gap-2 flex-1 min-w-[240px]">
+                <input name="comment" placeholder="Комментарий, что нужно поправить" className="input !py-1.5 !text-sm flex-1" />
+                <button className="btn-warning btn-sm">Вернуть на доработку</button>
+              </form>
+            </>
+          )}
+
+          {schedule?.status === "pending_employee" && (
+            <>
+              <span className="text-sm text-slate-500">
+                {confirmedCount}/{totalCount} сотрудников подтвердили
+              </span>
+              {myPending.length === 0 && (
+                <form action={publishAnyway.bind(null, schedule.id)}>
+                  <button className="btn-secondary btn-sm">
+                    Опубликовать сейчас (не дожидаясь всех)
+                  </button>
+                </form>
+              )}
+            </>
+          )}
+
+          {schedule?.status === "published" && (
+            <span className="text-sm text-slate-500">
+              График активен — правки сразу видны сотрудникам.
+            </span>
+          )}
         </div>
       )}
+
       {!schedule && !canManage && (
-        <p className="text-sm text-slate-500">
-          График на эту неделю ещё не составлен.
-        </p>
+        <p className="text-sm text-slate-500">График на эту неделю ещё не составлен.</p>
       )}
 
       {schedule?.status === "draft" && schedule.ownerComment && (
@@ -335,7 +396,7 @@ export default async function SchedulePage({
 
       {myPending.length > 0 && (
         <div className="card-pad border-2 border-indigo-500 space-y-3">
-          <h2 className="section-title">Подтвердите свои задачи на неделю</h2>
+          <h2 className="section-title">Подтвердите свои задачи на эту неделю</h2>
           {myPending.map((r) => (
             <div
               key={r.shift.id}
@@ -370,140 +431,127 @@ export default async function SchedulePage({
         </div>
       )}
 
+      {/* Горизонтальный график: точки — строками, дни недели — столбцами. */}
       {schedule && (
-        <div className="grid grid-cols-1 sm:grid-cols-7 gap-2">
-          {dates.map((d) => {
-            const isToday = d === today;
-            return (
-              <div
-                key={d}
-                className={`card p-2.5 min-h-[130px] ${
-                  isToday ? "ring-2 ring-indigo-500 border-indigo-200" : ""
-                }`}
-              >
-                <div className="flex items-baseline justify-between mb-2">
-                  <span
-                    className={`text-sm font-semibold ${
-                      isToday ? "text-indigo-700" : "text-slate-700"
-                    }`}
-                  >
-                    {weekdayShort(d)}
-                  </span>
-                  <span className="text-xs text-slate-400">{formatDateHuman(d)}</span>
-                </div>
-                <div className="space-y-2">
-                  {byDate[d].map((r) => (
-                    <div
-                      key={r.shift.id}
-                      className={`rounded-lg border p-2.5 text-xs space-y-1.5 ${
-                        isDoubleBooked(r)
-                          ? "border-amber-300 bg-amber-50"
-                          : "border-slate-200 bg-slate-50"
+        <div className="card overflow-x-auto">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr>
+                <th className="sticky left-0 z-10 min-w-[130px] border-b border-slate-200 bg-white p-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Точка
+                </th>
+                {dates.map((d) => {
+                  const isToday = d === today;
+                  return (
+                    <th
+                      key={d}
+                      className={`min-w-[170px] border-b border-l border-slate-200 p-2.5 text-left ${
+                        isToday ? "bg-indigo-50" : ""
                       }`}
                     >
-                      <div className="flex items-center gap-1.5 font-medium text-slate-900">
-                        <UserAvatar user={r.user} />
-                        {r.user?.name}
+                      <div className={`text-sm font-semibold ${isToday ? "text-indigo-700" : "text-slate-700"}`}>
+                        {weekdayShort(d)}
                       </div>
-                      <PointBadge point={r.point} />
-                      <div className="text-slate-700">
-                        {r.shift.type === "SHIFT"
-                          ? `${r.shift.plannedStart}–${r.shift.plannedEnd}`
-                          : `Визит${r.shift.note ? ": " + r.shift.note : ""}`}
-                      </div>
-                      {isDoubleBooked(r) && (
-                        <div className="badge-warning">⚠ ещё задача в этот день</div>
-                      )}
-                      <AckBadge shift={r.shift} />
-                      <AttendanceBadge row={r} />
-                      <ShiftActions row={r} scheduleStatus={schedule.status} />
-                      {canManage &&
-                        (schedule.status === "draft" ||
-                          schedule.status === "published") && (
-                          <form action={deleteShift.bind(null, r.shift.id, schedule.id)}>
-                            <button className="btn-link-danger !text-xs">удалить</button>
-                          </form>
-                        )}
-                    </div>
-                  ))}
-                  {byDate[d].length === 0 && (
-                    <div className="text-xs text-slate-300">—</div>
-                  )}
-                </div>
-
-                {canManage &&
-                  (schedule.status === "draft" || schedule.status === "published") && (
-                    <details className="mt-2">
-                      <summary className="cursor-pointer text-xs font-medium text-indigo-600 hover:text-indigo-800">
-                        + добавить на этот день
-                      </summary>
-                      <form
-                        action={addShift.bind(null, schedule.id)}
-                        className="mt-2 space-y-2 rounded-lg border border-dashed border-slate-300 p-2.5"
+                      <div className="text-xs font-normal text-slate-400">{formatDateHuman(d)}</div>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {allPoints.map((p) => (
+                <tr key={p.id} className="border-b border-slate-100 align-top">
+                  <td className="sticky left-0 z-10 bg-white p-2.5 align-top">
+                    <PointBadge point={p} />
+                  </td>
+                  {dates.map((d) => {
+                    const cellRows = byDate[d].filter((r) => r.point?.id === p.id);
+                    const isToday = d === today;
+                    return (
+                      <td
+                        key={d}
+                        className={`border-l border-slate-100 p-2 align-top ${isToday ? "bg-indigo-50/40" : ""}`}
                       >
-                        <input type="hidden" name="dates" value={d} />
-                        <select name="userId" required className="input !py-1.5 !text-xs">
-                          {activeUsers.map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.name}
-                            </option>
+                        <div className="space-y-1.5">
+                          {cellRows.map((r) => (
+                            <div
+                              key={r.shift.id}
+                              className={`rounded-lg border p-2 text-xs space-y-1 ${
+                                isDoubleBooked(r)
+                                  ? "border-amber-300 bg-amber-50"
+                                  : "border-slate-200 bg-slate-50"
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5 font-medium text-slate-900">
+                                <UserAvatar user={r.user} />
+                                {r.user?.name}
+                              </div>
+                              <div className="text-slate-700">
+                                {r.shift.type === "SHIFT"
+                                  ? `${r.shift.plannedStart}–${r.shift.plannedEnd}`
+                                  : `Визит${r.shift.note ? ": " + r.shift.note : ""}`}
+                              </div>
+                              {isDoubleBooked(r) && (
+                                <div className="badge-warning">⚠ ещё задача в этот день</div>
+                              )}
+                              <AckBadge shift={r.shift} />
+                              <AttendanceBadge row={r} />
+                              <ShiftActions row={r} scheduleStatus={schedule.status} />
+                              {canManage &&
+                                (schedule.status === "draft" || schedule.status === "published") && (
+                                  <form action={deleteShift.bind(null, r.shift.id, schedule.id)}>
+                                    <button className="btn-link-danger !text-xs">удалить</button>
+                                  </form>
+                                )}
+                            </div>
                           ))}
-                        </select>
-                        <select name="pointId" required className="input !py-1.5 !text-xs">
-                          {activePoints.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name}
-                            </option>
-                          ))}
-                        </select>
-                        <div className="type-toggle space-y-2">
-                          <div className="flex gap-1.5">
-                            <label htmlFor={`d-${d}-shift`} className="type-option !px-2 !py-1 !text-xs">
-                              <input
-                                id={`d-${d}-shift`}
-                                type="radio"
-                                name="type"
-                                value="SHIFT"
-                                defaultChecked
-                                className="sr-only"
-                              />
-                              Смена
-                            </label>
-                            <label htmlFor={`d-${d}-visit`} className="type-option !px-2 !py-1 !text-xs">
-                              <input
-                                id={`d-${d}-visit`}
-                                type="radio"
-                                name="type"
-                                value="VISIT"
-                                className="sr-only"
-                              />
-                              Визит
-                            </label>
-                          </div>
-                          <div className="shift-only grid grid-cols-2 gap-1.5">
-                            <input type="time" name="plannedStart" placeholder="начало" className="input !py-1.5 !text-xs" />
-                            <input type="time" name="plannedEnd" placeholder="конец" className="input !py-1.5 !text-xs" />
-                          </div>
-                          <div className="visit-only">
-                            <input name="note" placeholder="что за задача" className="input !py-1.5 !text-xs" />
-                          </div>
+                          {cellRows.length === 0 && !canManage && (
+                            <div className="text-xs text-slate-300">—</div>
+                          )}
+
+                          {canManage &&
+                            (schedule.status === "draft" || schedule.status === "published") && (
+                              <details>
+                                <summary className="cursor-pointer text-xs font-medium text-indigo-600 hover:text-indigo-800">
+                                  + добавить
+                                </summary>
+                                <form
+                                  action={addShift.bind(null, schedule.id)}
+                                  className="mt-1.5 space-y-1.5 rounded-lg border border-dashed border-slate-300 p-2"
+                                >
+                                  <input type="hidden" name="dates" value={d} />
+                                  <input type="hidden" name="pointId" value={p.id} />
+                                  <select name="userId" required className="input !py-1 !text-[11px]">
+                                    {activeUsers.map((u) => (
+                                      <option key={u.id} value={u.id}>
+                                        {u.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <ShiftTypeFields idPrefix={`c-${p.id}-${d}`} small />
+                                  <button type="submit" className="btn-primary btn-sm w-full !py-1 !text-[11px]">
+                                    Добавить
+                                  </button>
+                                </form>
+                              </details>
+                            )}
                         </div>
-                        <button type="submit" className="btn-primary btn-sm w-full">
-                          Добавить
-                        </button>
-                      </form>
-                    </details>
-                  )}
-              </div>
-            );
-          })}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
       {schedule && canManage && (schedule.status === "draft" || schedule.status === "published") && (
-        <div className="card-pad space-y-4">
-          <h2 className="section-title">Добавить смену / визит-задачу сразу на несколько дней</h2>
-          <form action={addShift.bind(null, schedule.id)} className="space-y-4">
+        <details className="card-pad">
+          <summary className="cursor-pointer section-title">
+            Добавить одну и ту же смену сразу на несколько дней ▾
+          </summary>
+          <form action={addShift.bind(null, schedule.id)} className="space-y-4 mt-4">
             <div className="grid sm:grid-cols-2 gap-3">
               <div>
                 <label className="field-label">Сотрудник</label>
@@ -518,7 +566,7 @@ export default async function SchedulePage({
               <div>
                 <label className="field-label">Точка</label>
                 <select name="pointId" required className="input">
-                  {activePoints.map((p) => (
+                  {allPoints.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
@@ -538,43 +586,11 @@ export default async function SchedulePage({
               Добавить на выбранные дни
             </button>
           </form>
-          <p className="text-xs text-slate-400">
-            Эта форма — для одного и того же сотрудника, точки и времени сразу на несколько дней.
-            Если сотрудник в течение недели работает в разных точках — быстрее добавить смены прямо в
-            карточке нужного дня выше («+ добавить на этот день»), для каждой точки отдельно.
+          <p className="text-xs text-slate-400 mt-2">
+            Для одной точки и одного дня быстрее добавить прямо в таблице выше — ссылка «+ добавить»
+            в нужной ячейке.
           </p>
-        </div>
-      )}
-
-      {schedule?.status === "draft" && canManage && (
-        <form action={submitForApproval.bind(null, schedule.id)}>
-          <button className="btn-primary">
-            {me.role === "owner"
-              ? "Отправить сотрудникам на подтверждение"
-              : "Отправить на утверждение владельцу"}
-          </button>
-        </form>
-      )}
-
-      {schedule?.status === "pending_owner" && me.role === "owner" && (
-        <div className="card-pad space-y-3">
-          <h2 className="section-title">График ожидает вашего утверждения</h2>
-          <form action={ownerApprove.bind(null, schedule.id)}>
-            <button className="btn-primary">Утвердить график</button>
-          </form>
-          <form action={ownerReject.bind(null, schedule.id)} className="flex gap-2">
-            <input name="comment" placeholder="Комментарий, что нужно поправить" className="input flex-1" />
-            <button className="btn-warning">Вернуть на доработку</button>
-          </form>
-        </div>
-      )}
-
-      {schedule?.status === "pending_employee" && canManage && myPending.length === 0 && (
-        <form action={publishAnyway.bind(null, schedule.id)}>
-          <button className="btn-secondary">
-            Опубликовать сейчас (не дожидаясь всех подтверждений)
-          </button>
-        </form>
+        </details>
       )}
     </div>
   );
