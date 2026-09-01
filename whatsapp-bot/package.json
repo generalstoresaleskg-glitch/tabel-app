@@ -1,0 +1,22 @@
+{
+  "name": "tabel-whatsapp-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Отдельный сервис-бот: подключается к WhatsApp владельца и пишет уведомления в групповой чат по запросу основного приложения «Табель».",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@hapi/boom": "10.0.1",
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "express": "5.2.1",
+    "ioredis": "6.0.0",
+    "pino": "10.3.1",
+    "qrcode": "1.5.4"
+  }
+}
