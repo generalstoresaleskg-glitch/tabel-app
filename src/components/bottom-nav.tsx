@@ -35,15 +35,17 @@ const ICONS = {
   ),
 };
 
+// Люди/Точки убраны отсюда — для владельца и управляющей это теперь пункты
+// меню, которое открывается тапом по профилю в шапке (см. ProfileMenu).
 export function BottomNav({ canManage, isOwner }: { canManage: boolean; isOwner: boolean }) {
   const pathname = usePathname();
+  void canManage;
+  void isOwner;
 
   const tabs: Tab[] = [
     { href: "/schedule", label: "График", icon: ICONS.calendar },
     { href: "/tabel", label: "Табель", icon: ICONS.clock },
   ];
-  if (canManage) tabs.push({ href: "/employees", label: "Люди", icon: ICONS.users });
-  if (isOwner) tabs.push({ href: "/points", label: "Точки", icon: ICONS.pin });
 
   return (
     <nav

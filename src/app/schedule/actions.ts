@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { schedules, shifts, scheduleChangeLog, users, points } from "@/db/schema";
 import { requireRole } from "@/lib/session";
 import { weekDates, addDays } from "@/lib/dates";
+import { getMissingShiftSlots } from "@/lib/schedule-queries";
 
 async function logChange(
   scheduleId: string,
@@ -118,11 +119,11 @@ export async function addShift(scheduleId: string, formData: FormData) {
   const dates = selectedDates.filter((d) => validDates.has(d));
   if (dates.length === 0) return;
 
-  // Владелец не работает по графику — на всякий случай проверяем и на сервере,
-  // а не только скрываем в выпадающем списке.
+  // Владелец и управляющий тоже могут выйти как подмена — проверяем только,
+  // что пользователь вообще существует и активен.
   const targetUserRows = await db.select().from(users).where(eq(users.id, userId));
   const targetUser = targetUserRows[0];
-  if (!targetUser || targetUser.role === "owner") return;
+  if (!targetUser || !targetUser.active) return;
 
   const pointRows = await db.select().from(points).where(eq(points.id, pointId));
   const point = pointRows[0];
@@ -201,6 +202,11 @@ export async function submitForApproval(scheduleId: string) {
   const schedule = scheduleRows[0];
   if (!schedule || schedule.status !== "draft") return;
 
+  // На каждой активной точке в каждый день недели должен быть хотя бы один
+  // обязательный сотрудник (SHIFT) — иначе отправлять на утверждение/публиковать нельзя.
+  const missing = await getMissingShiftSlots(scheduleId, schedule.weekStart);
+  if (missing.size > 0) return;
+
   const nextStatus = me.role === "owner" ? "published" : "pending_owner";
 
   await db
@@ -220,6 +226,11 @@ export async function ownerApprove(scheduleId: string) {
     .where(eq(schedules.id, scheduleId));
   const schedule = scheduleRows[0];
   if (!schedule || schedule.status !== "pending_owner") return;
+
+  // Дополнительная проверка на случай, если правило появилось уже после
+  // отправки на утверждение — публиковать дырявый график всё равно нельзя.
+  const missing = await getMissingShiftSlots(scheduleId, schedule.weekStart);
+  if (missing.size > 0) return;
 
   await db
     .update(schedules)

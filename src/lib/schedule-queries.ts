@@ -1,6 +1,7 @@
 import { eq, and, gte, lte } from "drizzle-orm";
 import { db } from "@/db";
 import { schedules, shifts, points, users, attendance } from "@/db/schema";
+import { weekDates } from "@/lib/dates";
 
 export async function getScheduleByWeek(weekStart: string) {
   const rows = await db
@@ -72,10 +73,38 @@ export async function getAllActiveUsers() {
   return db.select().from(users).where(eq(users.active, true));
 }
 
-// Владелец не работает по графику и не может быть назначен на смену/визит-задачу
+// Все активные пользователи, которых можно назначить на смену/визит —
+// владелец и управляющий тоже могут выйти как подмена, поэтому больше не
+// исключаем их из списка.
 export async function getAssignableUsers() {
-  const all = await db.select().from(users).where(eq(users.active, true));
-  return all.filter((u) => u.role !== "owner");
+  return db.select().from(users).where(eq(users.active, true));
+}
+
+// Для каждой активной точки и каждого дня недели графика проверяем, есть ли
+// хотя бы одна обязательная смена (SHIFT). VISIT в счёт не идёт. Возвращает
+// набор ключей "pointId_date", которых не хватает — по нему в сетке рисуется
+// предупреждение, а submitForApproval/ownerApprove блокируют отправку.
+export async function getMissingShiftSlots(scheduleId: string, weekStart: string) {
+  const activePoints = await getAllActivePoints();
+  const dates = weekDates(weekStart);
+
+  const shiftRows = await db
+    .select({ pointId: shifts.pointId, date: shifts.date, type: shifts.type })
+    .from(shifts)
+    .where(eq(shifts.scheduleId, scheduleId));
+
+  const covered = new Set(
+    shiftRows.filter((s) => s.type === "SHIFT").map((s) => `${s.pointId}_${s.date}`)
+  );
+
+  const missing = new Set<string>();
+  for (const p of activePoints) {
+    for (const d of dates) {
+      const key = `${p.id}_${d}`;
+      if (!covered.has(key)) missing.add(key);
+    }
+  }
+  return missing;
 }
 
 // Недели, черновик которых ждёт утверждения владельца — чтобы показать
