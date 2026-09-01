@@ -19,7 +19,7 @@ export function NavLink({
       className={
         "rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors " +
         (active
-          ? "bg-indigo-600 text-white shadow-sm"
+          ? "bg-brand-600 text-white shadow-sm"
           : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")
       }
     >

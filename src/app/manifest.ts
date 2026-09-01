@@ -10,8 +10,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Внутренняя система учёта графика и табеля сотрудников",
     start_url: "/schedule",
     display: "standalone",
-    background_color: "#f4f5f7",
-    theme_color: "#4f46e5",
+    background_color: "#fef1ec",
+    theme_color: "#c8400e",
     orientation: "portrait",
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },

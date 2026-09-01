@@ -60,7 +60,7 @@ export function BottomNav({ canManage, isOwner }: { canManage: boolean; isOwner:
             href={t.href}
             className={
               "flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium transition-colors " +
-              (active ? "text-indigo-600" : "text-slate-400")
+              (active ? "text-brand-600" : "text-slate-400")
             }
           >
             {t.icon}

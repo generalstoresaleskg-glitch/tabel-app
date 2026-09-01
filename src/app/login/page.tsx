@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { signIn } from "@/auth";
 import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
@@ -32,9 +33,14 @@ export default async function LoginPage({
     <div className="min-h-[80vh] flex items-center justify-center px-4">
       <form action={loginAction} className="w-full max-w-sm card-pad space-y-5">
         <div className="space-y-1 text-center">
-          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 text-lg font-bold text-white">
-            Т
-          </span>
+          <Image
+            src="/logo.png"
+            alt="AYAY KYZ"
+            width={96}
+            height={96}
+            className="mx-auto h-24 w-24 rounded-full object-cover shadow-sm"
+            priority
+          />
           <h1 className="page-title !text-xl pt-2">Вход в систему</h1>
           <p className="text-sm text-slate-500">
             График работы и табель сотрудников

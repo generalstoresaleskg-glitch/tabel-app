@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import localFont from "next/font/local";
+import Image from "next/image";
 import "./globals.css";
 import { auth, signOut } from "@/auth";
 import { NavLink } from "@/components/nav-link";
@@ -27,9 +29,34 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#4f46e5",
+  themeColor: "#c8400e",
   viewportFit: "cover",
 };
+
+// Шрифт для заголовков/логотипа — тёплая антиква под стиль лого AYAY KYZ,
+// с поддержкой кириллицы для русского интерфейса. Обычный текст и таблицы
+// остаются на системном sans-serif — так читаемость данных не страдает.
+// Файлы шрифта лежат прямо в проекте (src/fonts/lora), а не грузятся с
+// Google Fonts на этапе сборки — так сборка не зависит от доступа к внешней
+// сети. Латиница и кириллица — два отдельных @font-face с одинаковыми
+// именами весов; браузер сам берёт нужный файл под каждый символ, если
+// перечислить обе переменные подряд в font-family (см. globals.css).
+const loraLatin = localFont({
+  src: [
+    { path: "../fonts/lora/lora-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "../fonts/lora/lora-latin-700-normal.woff2", weight: "700", style: "normal" },
+  ],
+  variable: "--font-lora-latin",
+  display: "swap",
+});
+const loraCyrillic = localFont({
+  src: [
+    { path: "../fonts/lora/lora-cyrillic-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "../fonts/lora/lora-cyrillic-700-normal.woff2", weight: "700", style: "normal" },
+  ],
+  variable: "--font-lora-cyrillic",
+  display: "swap",
+});
 
 // "Требуется действие" — красная точка на аватаре: у владельца есть черновик,
 // ждущий его утверждения, либо (у владельца и управляющей) в графике текущей
@@ -64,17 +91,21 @@ export default async function RootLayout({
   const needsAttention = user ? await computeNeedsAttention(user.id, user.role) : false;
 
   return (
-    <html lang="ru" className="h-full">
+    <html lang="ru" className={`h-full ${loraLatin.variable} ${loraCyrillic.variable}`}>
       <body className="min-h-full flex flex-col bg-[var(--background)] text-slate-900">
         {user && (
           <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
             <div className="max-w-5xl mx-auto px-4 sm:px-6">
               <div className="flex items-center gap-3 py-3">
                 <div className="flex items-center gap-2 font-semibold text-slate-900">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-sm font-bold text-white">
-                    Т
-                  </span>
-                  <span className="hidden sm:inline">Табель</span>
+                  <Image
+                    src="/logo.png"
+                    alt="AYAY KYZ"
+                    width={32}
+                    height={32}
+                    className="h-8 w-8 rounded-full object-cover"
+                  />
+                  <span className="font-display hidden sm:inline">Табель</span>
                 </div>
 
                 <div className="ml-auto flex items-center gap-3">

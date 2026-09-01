@@ -166,6 +166,14 @@ async function WeekSection({
         <p className="text-sm text-slate-500">Ждём утверждения владельцем.</p>
       )}
 
+      {!readOnly && canManage && schedule?.status === "published" && (
+        <p className="text-sm text-slate-500">
+          График опубликован, сотрудники уже его видят. Если что-то поменялось —
+          просто нажмите на нужную ячейку в таблице ниже: можно добавить или убрать
+          человека, изменения применятся сразу, без повторного утверждения.
+        </p>
+      )}
+
       {schedule && (
         <WeekGrid
           points={allPoints}

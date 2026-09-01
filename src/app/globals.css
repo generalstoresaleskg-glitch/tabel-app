@@ -6,9 +6,23 @@
   --foreground: #16181d;
 }
 
+/* Фирменный цвет — взят прямо с короны на логотипе AYAY KYZ (тёплая
+   терракота), полная шкала оттенков посчитана из него же. Заменяет собой
+   индиго, использовавшийся раньше как акцентный цвет по всему интерфейсу. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-brand-50: #fef1ec;
+  --color-brand-100: #fcdfd4;
+  --color-brand-200: #f9bfa9;
+  --color-brand-300: #f69775;
+  --color-brand-400: #f27040;
+  --color-brand-500: #ef4c10;
+  --color-brand-600: #c8400e;
+  --color-brand-700: #a2340b;
+  --color-brand-800: #812909;
+  --color-brand-900: #5f1f07;
+  --font-display: var(--font-lora-latin), var(--font-lora-cyrillic), Georgia, "Times New Roman", serif;
 }
 
 html {
@@ -24,12 +38,16 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+.font-display {
+  font-family: var(--font-display);
+}
+
 @layer components {
   /* Buttons — each variant fully spelled out (Tailwind v4 @apply can't chain custom classes) */
   .btn-primary {
     @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-medium
       whitespace-nowrap select-none transition-colors
-      bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 active:bg-indigo-800
+      bg-brand-600 text-white shadow-sm hover:bg-brand-700 active:bg-brand-800
       disabled:opacity-50 disabled:pointer-events-none;
   }
   .btn-secondary {
@@ -57,8 +75,8 @@ body {
       disabled:opacity-50 disabled:pointer-events-none;
   }
   .btn-link {
-    @apply inline-flex items-center gap-1 text-sm font-medium text-indigo-600 underline underline-offset-2
-      decoration-indigo-300 hover:text-indigo-800 hover:decoration-indigo-600;
+    @apply inline-flex items-center gap-1 text-sm font-medium text-brand-600 underline underline-offset-2
+      decoration-brand-300 hover:text-brand-800 hover:decoration-brand-600;
   }
   .btn-link-danger {
     @apply inline-flex items-center gap-1 text-sm font-medium text-red-600 underline underline-offset-2
@@ -75,13 +93,13 @@ body {
   .input {
     @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-[15px] leading-6 text-slate-900
       placeholder:text-slate-400 shadow-sm outline-none transition
-      focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100;
+      focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
   }
   select.input {
     @apply pr-8;
   }
   .checkbox {
-    @apply h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-2 focus:ring-indigo-200;
+    @apply h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-2 focus:ring-brand-200;
   }
 
   /* Surfaces */
@@ -106,7 +124,7 @@ body {
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium bg-red-50 text-red-700;
   }
   .badge-brand {
-    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium bg-indigo-50 text-indigo-700;
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium bg-brand-50 text-brand-700;
   }
 
   /* Переключатель "Смена / Визит-задача" без единой строчки JS —
@@ -124,12 +142,12 @@ body {
   }
   .type-option {
     @apply cursor-pointer select-none rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm
-      font-medium text-slate-600 transition-colors has-[:checked]:border-indigo-500
-      has-[:checked]:bg-indigo-50 has-[:checked]:text-indigo-700;
+      font-medium text-slate-600 transition-colors has-[:checked]:border-brand-500
+      has-[:checked]:bg-brand-50 has-[:checked]:text-brand-700;
   }
 
   .page-title {
-    @apply text-2xl font-semibold tracking-tight text-slate-900;
+    @apply font-display text-2xl font-semibold tracking-tight text-slate-900;
   }
   .page-subtitle {
     @apply text-sm text-slate-500 mt-0.5;

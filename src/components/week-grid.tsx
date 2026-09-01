@@ -19,24 +19,46 @@ export type CellEntry = {
 type PointLite = { id: string; name: string };
 type AssignableUser = { id: string; name: string; role: string };
 
-// Аватар в ячейке: сплошной цветной кружок — обязательная смена (SHIFT),
-// белый с пунктирной обводкой — визит (VISIT). Своя смена — с индиго-кольцом.
-// Крупнее, чем в первой версии — на реальном экране 24px было мелко и трудно
-// попасть пальцем, особенно в Safari на iPhone.
+// Аватар в ячейке: обязательная смена (SHIFT) — сплошной цветной кружок.
+// Визит (VISIT) — та же самоличная заливка цветом (тот же принцип, что и у
+// смены), но скруглённый квадрат вместо круга плюс маленький значок-булавка —
+// читается как "визит на точку", а не как "ждёт подтверждения" (раньше был
+// серый пунктирный контур, который путали именно с этим). Своя смена — с
+// фирменным кольцом вместо прежнего индиго.
 function Avatar({ entry }: { entry: CellEntry }) {
   const isShift = entry.type === "SHIFT";
+  const meRing = entry.isMe ? " ring-2 ring-brand-600 ring-offset-1" : "";
+
+  if (isShift) {
+    return (
+      <span
+        title={entry.userName}
+        className={
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold leading-none " +
+          `${userColor(entry.userId)} text-white` +
+          meRing
+        }
+      >
+        {initials(entry.userName)}
+      </span>
+    );
+  }
+
   return (
     <span
-      title={entry.userName}
+      title={`${entry.userName} · визит`}
       className={
-        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold leading-none " +
-        (isShift
-          ? `${userColor(entry.userId)} text-white`
-          : "bg-white text-slate-500 border-2 border-dashed border-slate-400") +
-        (entry.isMe ? " ring-2 ring-indigo-600 ring-offset-1" : "")
+        "relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[11px] font-bold leading-none " +
+        `${userColor(entry.userId)} text-white` +
+        meRing
       }
     >
       {initials(entry.userName)}
+      <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white bg-white text-slate-600">
+        <svg viewBox="0 0 24 24" fill="currentColor" className="h-2.5 w-2.5">
+          <path d="M12 21s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11Z" />
+        </svg>
+      </span>
     </span>
   );
 }
@@ -174,6 +196,7 @@ export function WeekGrid({
         >
           <div
             className="mx-auto w-full max-w-lg rounded-t-2xl bg-white p-4 shadow-2xl"
+            style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 28px)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-slate-200" />
@@ -209,7 +232,7 @@ export function WeekGrid({
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold text-slate-900">
                         {e.userName}
-                        {e.isMe && <span className="ml-1.5 text-xs font-normal text-indigo-600">это вы</span>}
+                        {e.isMe && <span className="ml-1.5 text-xs font-normal text-brand-600">это вы</span>}
                       </p>
                       <p className="text-xs text-slate-500">
                         {e.userRole !== "employee" && `${roleLabel(e.userRole)} · `}
@@ -217,7 +240,7 @@ export function WeekGrid({
                       </p>
                       {showCheckIn && e.type === "SHIFT" && !e.attendance?.checkinAt && checkInAction && (
                         <form action={checkInAction.bind(null, e.shiftId)} className="mt-2">
-                          <button className="btn-primary btn-sm !bg-emerald-600 hover:!bg-emerald-700 w-full">
+                          <button className="btn-primary !bg-emerald-600 hover:!bg-emerald-700 w-full !py-3 !text-base">
                             ✓ Я на месте
                           </button>
                         </form>
@@ -228,12 +251,12 @@ export function WeekGrid({
                         !e.attendance.checkoutAt &&
                         checkOutAction && (
                           <form action={checkOutAction.bind(null, e.shiftId)} className="mt-2">
-                            <button className="btn-secondary btn-sm w-full">Я ухожу</button>
+                            <button className="btn-secondary w-full !py-3 !text-base">Я ухожу</button>
                           </form>
                         )}
                       {showCheckIn && e.type === "VISIT" && !e.attendance?.checkinAt && markVisitAction && (
                         <form action={markVisitAction.bind(null, e.shiftId)} className="mt-2">
-                          <button className="btn-primary btn-sm !bg-emerald-600 hover:!bg-emerald-700 w-full">
+                          <button className="btn-primary !bg-emerald-600 hover:!bg-emerald-700 w-full !py-3 !text-base">
                             ✓ Посетил(а) точку
                           </button>
                         </form>
@@ -253,7 +276,7 @@ export function WeekGrid({
               <button
                 type="button"
                 onClick={() => setAdding(true)}
-                className="mt-3 w-full rounded-xl border-[1.5px] border-dashed border-indigo-300 bg-white py-2.5 text-sm font-semibold text-indigo-600"
+                className="mt-3 w-full rounded-xl border-[1.5px] border-dashed border-brand-300 bg-white py-3.5 text-base font-semibold text-brand-600"
               >
                 + Добавить сотрудника
               </button>
@@ -283,10 +306,10 @@ export function WeekGrid({
                 </div>
                 <input name="note" placeholder="Комментарий к визиту (необязательно)" className="input !py-1.5 !text-sm" />
                 <div className="flex gap-2">
-                  <button type="submit" className="btn-primary btn-sm flex-1">
+                  <button type="submit" className="btn-primary flex-1 !py-3 !text-base">
                     Добавить
                   </button>
-                  <button type="button" onClick={() => setAdding(false)} className="btn-secondary btn-sm">
+                  <button type="button" onClick={() => setAdding(false)} className="btn-secondary !py-3 !text-base">
                     Отмена
                   </button>
                 </div>
