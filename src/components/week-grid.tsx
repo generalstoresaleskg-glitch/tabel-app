@@ -5,6 +5,11 @@ import { weekdayShort, weekdayFull, formatDateHuman } from "@/lib/dates";
 import { userColor, initials } from "@/lib/user-color";
 import { roleLabel } from "@/lib/role-label";
 
+// Карта "userId -> цвет" строится один раз на странице (см. schedule/page.tsx)
+// по полному списку активных сотрудников, чтобы у каждого был свой,
+// заведомо непохожий на других цвет. userColor(id) — запасной вариант на
+// случай, если человека почему-то нет в карте (например, уволен).
+
 export type CellEntry = {
   shiftId: string;
   userId: string;
@@ -25,7 +30,7 @@ type AssignableUser = { id: string; name: string; role: string };
 // читается как "визит на точку", а не как "ждёт подтверждения" (раньше был
 // серый пунктирный контур, который путали именно с этим). Своя смена — с
 // фирменным кольцом вместо прежнего индиго.
-function Avatar({ entry }: { entry: CellEntry }) {
+function Avatar({ entry, color }: { entry: CellEntry; color: string }) {
   const isShift = entry.type === "SHIFT";
   const meRing = entry.isMe ? " ring-2 ring-brand-600 ring-offset-1" : "";
 
@@ -34,8 +39,8 @@ function Avatar({ entry }: { entry: CellEntry }) {
       <span
         title={entry.userName}
         className={
-          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold leading-none " +
-          `${userColor(entry.userId)} text-white` +
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold leading-none tracking-tight " +
+          `${color} text-white` +
           meRing
         }
       >
@@ -48,8 +53,8 @@ function Avatar({ entry }: { entry: CellEntry }) {
     <span
       title={`${entry.userName} · визит`}
       className={
-        "relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[11px] font-bold leading-none " +
-        `${userColor(entry.userId)} text-white` +
+        "relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[10px] font-bold leading-none tracking-tight " +
+        `${color} text-white` +
         meRing
       }
     >
@@ -85,6 +90,7 @@ export function WeekGrid({
   canManage,
   allowCheckIn,
   assignableUsers,
+  userColors,
   addShiftAction,
   deleteShiftAction,
   checkInAction,
@@ -101,12 +107,14 @@ export function WeekGrid({
   canManage: boolean;
   allowCheckIn: boolean;
   assignableUsers: AssignableUser[];
+  userColors: Record<string, string>;
   addShiftAction?: (formData: FormData) => void | Promise<void>;
   deleteShiftAction?: (shiftId: string, scheduleId: string) => void | Promise<void>;
   checkInAction?: (shiftId: string) => void | Promise<void>;
   checkOutAction?: (shiftId: string) => void | Promise<void>;
   markVisitAction?: (shiftId: string) => void | Promise<void>;
 }) {
+  const colorFor = (userId: string) => userColors[userId] ?? userColor(userId);
   const [selected, setSelected] = useState<{ pointId: string; date: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const missingSet = useMemo(() => new Set(missing), [missing]);
@@ -172,7 +180,7 @@ export function WeekGrid({
                   >
                     <div className="flex flex-wrap items-center justify-center gap-1">
                       {shown.map((e) => (
-                        <Avatar key={e.shiftId} entry={e} />
+                        <Avatar key={e.shiftId} entry={e} color={colorFor(e.userId)} />
                       ))}
                       {overflow > 0 && (
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[11px] font-bold text-slate-600">
@@ -228,7 +236,7 @@ export function WeekGrid({
                     key={e.shiftId}
                     className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-2.5"
                   >
-                    <Avatar entry={e} />
+                    <Avatar entry={e} color={colorFor(e.userId)} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold text-slate-900">
                         {e.userName}

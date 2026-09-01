@@ -2,13 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { userColor, initials } from "@/lib/user-color";
+import { initials } from "@/lib/user-color";
 import { roleLabel } from "@/lib/role-label";
 
 export function ProfileMenu({
-  userId,
   name,
   role,
+  color,
   canManage,
   isOwner,
   needsAttention,
@@ -16,6 +16,7 @@ export function ProfileMenu({
   userId: string;
   name: string;
   role: string;
+  color: string;
   canManage: boolean;
   isOwner: boolean;
   needsAttention: boolean;
@@ -34,9 +35,7 @@ export function ProfileMenu({
   const avatar = (
     <span className="relative shrink-0">
       <span
-        className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white ${userColor(
-          userId
-        )}`}
+        className={`flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-bold tracking-tight text-white ${color}`}
       >
         {initials(name)}
       </span>

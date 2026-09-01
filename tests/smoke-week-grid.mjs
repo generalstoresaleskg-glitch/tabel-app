@@ -52,11 +52,13 @@ try {
   const body2 = await owner.textContent("body");
   log("drafts created for both weeks", (body2.match(/Черновик/g) || []).length >= 2);
 
-  // Submit should be blocked with a warning (no shifts assigned yet -> missing mandatory slots)
+  // Правило "нельзя отправить, пока не хватает обязательного сотрудника" убрали:
+  // кнопка публикации доступна всегда, предупреждение теперь не блокирует, а
+  // просто подсказывает.
   const body3 = await owner.textContent("body");
-  log("blocked with missing-slots warning", body3.includes("Нельзя отправить"));
+  log("missing-slots warning shown but non-blocking", body3.includes("Не хватает обязательного сотрудника"));
   const submitBtnCount = await owner.locator('button:has-text("Опубликовать график")').count();
-  log("no submit button while slots missing", submitBtnCount === 0);
+  log("submit button available even with missing slots", submitBtnCount > 0);
 
   // Tap the first grid cell to open the bottom sheet and assign an employee
   const firstCell = owner.locator("[data-testid=\"grid-cell\"]").first();

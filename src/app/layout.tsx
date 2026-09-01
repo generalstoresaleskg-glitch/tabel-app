@@ -11,7 +11,9 @@ import {
   getScheduleByWeek,
   getMissingShiftSlots,
   getWeeksAwaitingOwnerApproval,
+  getAssignableUsers,
 } from "@/lib/schedule-queries";
+import { buildUserColorMap, userColor } from "@/lib/user-color";
 
 export const metadata: Metadata = {
   title: "Табель — график и учёт рабочего времени",
@@ -89,6 +91,12 @@ export default async function RootLayout({
   const user = session?.user;
   const canManage = !!user && (user.role === "owner" || user.role === "manager");
   const needsAttention = user ? await computeNeedsAttention(user.id, user.role) : false;
+  // Тот же цвет, что и в графике (см. week-grid.tsx) — считаем по тому же
+  // списку активных сотрудников, чтобы свой аватар в шапке совпадал с собой
+  // же в таблице.
+  const myColor = user
+    ? buildUserColorMap((await getAssignableUsers()).map((u) => u.id))[user.id] ?? userColor(user.id)
+    : "";
 
   return (
     <html lang="ru" className={`h-full ${loraLatin.variable} ${loraCyrillic.variable}`}>
@@ -113,6 +121,7 @@ export default async function RootLayout({
                     userId={user.id}
                     name={user.name ?? ""}
                     role={user.role}
+                    color={myColor}
                     canManage={canManage}
                     isOwner={user.role === "owner"}
                     needsAttention={needsAttention}

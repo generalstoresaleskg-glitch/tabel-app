@@ -21,6 +21,7 @@ import {
 } from "./actions";
 import { checkIn, checkOut, markVisit } from "./attendance-actions";
 import { WeekGrid, CellEntry } from "@/components/week-grid";
+import { buildUserColorMap } from "@/lib/user-color";
 
 const STATUS_LABEL: Record<string, string> = {
   draft: "Черновик",
@@ -77,6 +78,7 @@ async function WeekSection({
   canManage,
   allPoints,
   assignableUsers,
+  userColors,
   today,
 }: {
   weekStart: string;
@@ -86,6 +88,7 @@ async function WeekSection({
   canManage: boolean;
   allPoints: PointLite[];
   assignableUsers: AssignableUser[];
+  userColors: Record<string, string>;
   today: string;
 }) {
   const dates = weekDates(weekStart);
@@ -135,17 +138,17 @@ async function WeekSection({
 
       {!readOnly && canManage && schedule?.status === "draft" && (
         <div className="card-pad flex flex-wrap items-center gap-3">
-          {missing.length > 0 ? (
+          <form action={submitForApproval.bind(null, schedule.id)}>
+            <button className="btn-primary btn-sm">
+              {me.role === "owner" ? "Опубликовать график" : "Отправить на утверждение владельцу"}
+            </button>
+          </form>
+          {missing.length > 0 && (
             <span className="text-sm text-amber-700">
-              ⚠ Нельзя отправить: не хватает обязательного сотрудника на {missing.length}{" "}
+              ⚠ Не хватает обязательного сотрудника на {missing.length}{" "}
               {missing.length === 1 ? "точке/дне" : "точках/днях"} — отмечены жёлтым в таблице ниже.
+              Отправить можно и так, но лучше сначала закрыть точки.
             </span>
-          ) : (
-            <form action={submitForApproval.bind(null, schedule.id)}>
-              <button className="btn-primary btn-sm">
-                {me.role === "owner" ? "Опубликовать график" : "Отправить на утверждение владельцу"}
-              </button>
-            </form>
           )}
         </div>
       )}
@@ -159,6 +162,12 @@ async function WeekSection({
             <input name="comment" placeholder="Комментарий, что нужно поправить" className="input !py-1.5 !text-sm flex-1" />
             <button className="btn-warning btn-sm">Вернуть на доработку</button>
           </form>
+          {missing.length > 0 && (
+            <span className="w-full text-sm text-amber-700">
+              ⚠ Не хватает обязательного сотрудника на {missing.length}{" "}
+              {missing.length === 1 ? "точке/дне" : "точках/днях"} — отмечены жёлтым в таблице ниже.
+            </span>
+          )}
         </div>
       )}
 
@@ -186,6 +195,7 @@ async function WeekSection({
           canManage={!readOnly && canManage && (schedule.status === "draft" || schedule.status === "published")}
           allowCheckIn={!readOnly}
           assignableUsers={assignableUsers}
+          userColors={userColors}
           addShiftAction={!readOnly ? addShift.bind(null, schedule.id) : undefined}
           deleteShiftAction={!readOnly ? deleteShift : undefined}
           checkInAction={!readOnly ? checkIn : undefined}
@@ -211,6 +221,10 @@ export default async function SchedulePage({
 
   const allPoints = await getAllActivePoints();
   const assignableUsers = await getAssignableUsers();
+  // Один цвет на человека на всю страницу (и обе недели, и историю) — иначе
+  // при разном порядке пользователей в разных секциях один и тот же человек
+  // мог бы окраситься по-разному.
+  const userColors = buildUserColorMap(assignableUsers.map((u) => u.id));
 
   const requestedWeek = week ? mondayOf(week) : null;
   const isHistory = requestedWeek !== null && requestedWeek !== currentWeekStart && requestedWeek !== nextWeekStart;
@@ -248,6 +262,7 @@ export default async function SchedulePage({
           canManage={canManage}
           allPoints={allPoints}
           assignableUsers={assignableUsers}
+          userColors={userColors}
           today={today}
         />
       </div>
@@ -280,6 +295,7 @@ export default async function SchedulePage({
         canManage={canManage}
         allPoints={allPoints}
         assignableUsers={assignableUsers}
+        userColors={userColors}
         today={today}
       />
 
@@ -291,6 +307,7 @@ export default async function SchedulePage({
         canManage={canManage}
         allPoints={allPoints}
         assignableUsers={assignableUsers}
+        userColors={userColors}
         today={today}
       />
 

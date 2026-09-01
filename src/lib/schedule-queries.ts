@@ -76,8 +76,10 @@ export async function getAllActiveUsers() {
 // Все активные пользователи, которых можно назначить на смену/визит —
 // владелец и управляющий тоже могут выйти как подмена, поэтому больше не
 // исключаем их из списка.
+// Сортировка по дате создания — стабильный порядок, от него зависит, кому
+// какой цвет достанется в графике (см. buildUserColorMap в user-color.ts).
 export async function getAssignableUsers() {
-  return db.select().from(users).where(eq(users.active, true));
+  return db.select().from(users).where(eq(users.active, true)).orderBy(users.createdAt);
 }
 
 // Для каждой активной точки и каждого дня недели графика проверяем, есть ли
