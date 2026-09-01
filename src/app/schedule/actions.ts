@@ -1,11 +1,11 @@
 "use server";
 
 import { randomUUID } from "crypto";
-import { and, eq, ne } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { schedules, shifts, scheduleChangeLog, users, points } from "@/db/schema";
-import { requireRole, requireUser } from "@/lib/session";
+import { requireRole } from "@/lib/session";
 import { weekDates, addDays } from "@/lib/dates";
 
 async function logChange(
@@ -43,8 +43,8 @@ export async function createDraftForWeek(weekStart: string) {
 }
 
 // Создаёт черновик на неделю и копирует в него все задачи из графика
-// предыдущей недели (даты сдвигаются на +7 дней). Подтверждения сотрудников
-// сбрасываются — черновик проходит обычный цикл согласования заново.
+// предыдущей недели (даты сдвигаются на +7 дней). Черновик проходит
+// обычный цикл согласования заново.
 export async function copyPreviousWeek(weekStart: string) {
   const me = await requireRole(["owner", "manager"]);
 
@@ -86,7 +86,6 @@ export async function copyPreviousWeek(weekStart: string) {
         plannedStart: s.plannedStart,
         plannedEnd: s.plannedEnd,
         note: s.note,
-        employeeAck: "pending",
       });
     }
   }
@@ -146,7 +145,6 @@ export async function addShift(scheduleId: string, formData: FormData) {
       plannedStart: type === "SHIFT" ? plannedStart : null,
       plannedEnd: type === "SHIFT" ? plannedEnd : null,
       note: type === "VISIT" ? note : null,
-      employeeAck: "pending",
     });
 
     if (schedule.status === "published") {
@@ -190,6 +188,9 @@ export async function deleteShift(shiftId: string, scheduleId: string) {
   revalidatePath("/schedule");
 }
 
+// Владелец публикует свой черновик сразу; черновик управляющей сначала уходит
+// владельцу на утверждение. Подтверждение сотрудниками не требуется —
+// опубликованный график сразу виден всем.
 export async function submitForApproval(scheduleId: string) {
   const me = await requireRole(["owner", "manager"]);
 
@@ -200,7 +201,7 @@ export async function submitForApproval(scheduleId: string) {
   const schedule = scheduleRows[0];
   if (!schedule || schedule.status !== "draft") return;
 
-  const nextStatus = me.role === "owner" ? "pending_employee" : "pending_owner";
+  const nextStatus = me.role === "owner" ? "published" : "pending_owner";
 
   await db
     .update(schedules)
@@ -222,7 +223,7 @@ export async function ownerApprove(scheduleId: string) {
 
   await db
     .update(schedules)
-    .set({ status: "pending_employee", updatedAt: new Date().toISOString() })
+    .set({ status: "published", updatedAt: new Date().toISOString() })
     .where(eq(schedules.id, scheduleId));
 
   revalidatePath("/schedule");
@@ -252,70 +253,3 @@ export async function ownerReject(scheduleId: string, formData: FormData) {
   revalidatePath("/schedule");
 }
 
-async function maybeAutoPublish(scheduleId: string) {
-  const remaining = await db
-    .select()
-    .from(shifts)
-    .where(and(eq(shifts.scheduleId, scheduleId), ne(shifts.employeeAck, "confirmed")));
-
-  if (remaining.length === 0) {
-    await db
-      .update(schedules)
-      .set({ status: "published", updatedAt: new Date().toISOString() })
-      .where(eq(schedules.id, scheduleId));
-  }
-}
-
-export async function employeeAck(
-  shiftId: string,
-  scheduleId: string,
-  decision: "confirmed" | "question",
-  formData: FormData
-) {
-  const me = await requireUser();
-
-  const shiftRows = await db.select().from(shifts).where(eq(shifts.id, shiftId));
-  const shift = shiftRows[0];
-  if (!shift || shift.userId !== me.id) return;
-
-  const scheduleRows = await db
-    .select()
-    .from(schedules)
-    .where(eq(schedules.id, scheduleId));
-  const schedule = scheduleRows[0];
-  if (!schedule || schedule.status !== "pending_employee") return;
-
-  const comment = String(formData.get("comment") ?? "");
-
-  await db
-    .update(shifts)
-    .set({
-      employeeAck: decision,
-      employeeComment: decision === "question" ? comment || null : null,
-    })
-    .where(eq(shifts.id, shiftId));
-
-  if (decision === "confirmed") {
-    await maybeAutoPublish(scheduleId);
-  }
-
-  revalidatePath("/schedule");
-}
-
-export async function publishAnyway(scheduleId: string) {
-  await requireRole(["owner", "manager"]);
-
-  const scheduleRows = await db
-    .select()
-    .from(schedules)
-    .where(eq(schedules.id, scheduleId));
-  const schedule = scheduleRows[0];
-  if (!schedule || schedule.status !== "pending_employee") return;
-
-  await db
-    .update(schedules)
-    .set({ status: "published", updatedAt: new Date().toISOString() })
-    .where(eq(schedules.id, scheduleId));
-
-  revalidatePath("/schedule");
-}

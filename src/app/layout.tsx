@@ -1,11 +1,27 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { auth, signOut } from "@/auth";
 import { NavLink } from "@/components/nav-link";
+import { BottomNav } from "@/components/bottom-nav";
 
 export const metadata: Metadata = {
   title: "Табель — график и учёт рабочего времени",
   description: "Внутренняя система учёта графика и табеля сотрудников",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Табель",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#4f46e5",
+  viewportFit: "cover",
 };
 
 const ROLE_LABEL: Record<string, string> = {
@@ -54,7 +70,9 @@ export default async function RootLayout({
                 </div>
               </div>
 
-              <nav className="flex flex-wrap items-center gap-1.5 overflow-x-auto pb-3 -mx-1 px-1">
+              {/* На десктопе — обычное меню сверху. На телефоне вместо него — */}
+              {/* нижняя таб-панель (см. ниже), чтобы было похоже на приложение. */}
+              <nav className="hidden sm:flex flex-wrap items-center gap-1.5 overflow-x-auto pb-3 -mx-1 px-1">
                 <NavLink href="/schedule">График</NavLink>
                 <NavLink href="/tabel">Табель</NavLink>
                 {(user.role === "owner" || user.role === "manager") && (
@@ -67,9 +85,15 @@ export default async function RootLayout({
             </div>
           </header>
         )}
-        <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6">
+        <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 pb-24 sm:pb-6">
           {children}
         </main>
+        {user && (
+          <BottomNav
+            canManage={user.role === "owner" || user.role === "manager"}
+            isOwner={user.role === "owner"}
+          />
+        )}
       </body>
     </html>
   );

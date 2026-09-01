@@ -25,11 +25,14 @@ export const points = pgTable("points", {
 });
 
 // Недельные графики
+// Статусы: draft (собирается) -> pending_owner (только если создал управляющий,
+// ждёт утверждения владельцем) -> published (виден всем сразу, без подтверждения
+// сотрудниками — решили, что для команды из 5 человек это лишний шаг).
 export const schedules = pgTable("schedules", {
   id: text("id").primaryKey(),
   weekStart: text("week_start").notNull(), // "2026-09-01" (понедельник недели)
   status: text("status", {
-    enum: ["draft", "pending_owner", "pending_employee", "published"],
+    enum: ["draft", "pending_owner", "published"],
   })
     .notNull()
     .default("draft"),
@@ -58,12 +61,6 @@ export const shifts = pgTable("shifts", {
   plannedStart: text("planned_start"), // null для VISIT
   plannedEnd: text("planned_end"), // null для VISIT
   note: text("note"), // напр. "съёмка контента"
-  employeeAck: text("employee_ack", {
-    enum: ["pending", "confirmed", "question"],
-  })
-    .notNull()
-    .default("pending"),
-  employeeComment: text("employee_comment"),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 });
 

@@ -78,25 +78,8 @@ export async function getAssignableUsers() {
   return all.filter((u) => u.role !== "owner");
 }
 
-// Недели, где у сотрудника есть неподтверждённые задачи — чтобы показать
-// напоминание независимо от того, на какую неделю сейчас открыт график
-// (иначе легко пропустить, если по умолчанию открывается текущая неделя).
-export async function getWeeksNeedingMyConfirmation(userId: string) {
-  const rows = await db
-    .select({ weekStart: schedules.weekStart })
-    .from(shifts)
-    .innerJoin(schedules, eq(shifts.scheduleId, schedules.id))
-    .where(
-      and(
-        eq(schedules.status, "pending_employee"),
-        eq(shifts.userId, userId),
-        eq(shifts.employeeAck, "pending")
-      )
-    );
-  return [...new Set(rows.map((r) => r.weekStart))].sort();
-}
-
-// Недели, черновик которых ждёт утверждения владельца.
+// Недели, черновик которых ждёт утверждения владельца — чтобы показать
+// напоминание владельцу независимо от того, на какую неделю сейчас открыт график.
 export async function getWeeksAwaitingOwnerApproval() {
   const rows = await db
     .select({ weekStart: schedules.weekStart })
