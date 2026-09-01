@@ -21,16 +21,18 @@ type AssignableUser = { id: string; name: string; role: string };
 
 // Аватар в ячейке: сплошной цветной кружок — обязательная смена (SHIFT),
 // белый с пунктирной обводкой — визит (VISIT). Своя смена — с индиго-кольцом.
+// Крупнее, чем в первой версии — на реальном экране 24px было мелко и трудно
+// попасть пальцем, особенно в Safari на iPhone.
 function Avatar({ entry }: { entry: CellEntry }) {
   const isShift = entry.type === "SHIFT";
   return (
     <span
       title={entry.userName}
       className={
-        "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold leading-none " +
+        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold leading-none " +
         (isShift
           ? `${userColor(entry.userId)} text-white`
-          : "bg-white text-slate-500 border-[1.5px] border-dashed border-slate-400") +
+          : "bg-white text-slate-500 border-2 border-dashed border-slate-400") +
         (entry.isMe ? " ring-2 ring-indigo-600 ring-offset-1" : "")
       }
     >
@@ -42,7 +44,7 @@ function Avatar({ entry }: { entry: CellEntry }) {
 function WarnBadge() {
   return (
     <span
-      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-[1.5px] border-amber-500 bg-white text-[11px] font-black text-amber-500"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-amber-500 bg-white text-sm font-black text-amber-500"
       title="Нет обязательного сотрудника"
     >
       !
@@ -103,70 +105,67 @@ export function WeekGrid({
   const canEditHere = canManage && !!scheduleId;
 
   return (
-    <div className="card relative overflow-hidden">
-      <table className="w-full table-fixed border-collapse text-[10.5px]">
-        <thead>
-          <tr>
-            <th className="sticky left-0 z-10 w-14 border-b border-slate-200 bg-white p-1.5 text-left text-[9px] font-bold uppercase tracking-wide text-slate-500">
-              Точка
-            </th>
-            {dates.map((d) => {
-              const isToday = d === today;
-              return (
-                <th
-                  key={d}
-                  className={`border-b border-l border-slate-200 p-1 text-center font-bold ${
-                    isToday ? "bg-emerald-50 text-emerald-700" : "text-slate-500"
-                  }`}
-                >
-                  {weekdayShort(d)}
-                  <span className="block text-[11px]">{formatDateHuman(d)}</span>
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {points.map((p) => (
-            <tr key={p.id} className="border-b border-slate-100">
-              <td className="sticky left-0 z-10 bg-white p-1.5 align-middle text-[10px] font-semibold text-slate-800">
-                {p.name}
-              </td>
+    <div className="card relative overflow-hidden p-2.5">
+      {/* Общая шапка с датами — один раз сверху, не в каждой строке точки, чтобы
+          не отъедать ширину под колонку с названием точки на каждой строке. */}
+      <div className="grid grid-cols-7 gap-1 px-0.5 pb-1.5">
+        {dates.map((d) => {
+          const isToday = d === today;
+          return (
+            <div
+              key={d}
+              className={`rounded-lg py-1 text-center ${isToday ? "bg-emerald-50 text-emerald-700" : "text-slate-500"}`}
+            >
+              <div className="text-[11px] font-bold">{weekdayShort(d)}</div>
+              <div className="text-sm font-bold">{formatDateHuman(d)}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Каждая точка — своя секция на всю ширину: имя точки сверху, а под ним
+          7 ячеек-дней в CSS-сетке на всю ширину экрана (без узкой колонки слева,
+          как было в таблице) — ячейка получает намного больше места под тап. */}
+      <div className="space-y-2.5">
+        {points.map((p) => (
+          <div key={p.id} className="rounded-xl border border-slate-100 p-1.5">
+            <div className="px-0.5 pb-1 text-xs font-bold text-slate-700">{p.name}</div>
+            <div className="grid grid-cols-7 gap-1">
               {dates.map((d) => {
                 const entries = cells[p.id]?.[d] ?? [];
                 const isMissing = missingSet.has(`${p.id}_${d}`);
                 const isToday = d === today;
-                const shown = entries.slice(0, 3);
+                const shown = entries.slice(0, 2);
                 const overflow = entries.length - shown.length;
                 return (
-                  <td
+                  <button
                     key={d}
-                    className={`border-l border-slate-100 p-0 align-middle ${
-                      isMissing ? "bg-amber-50" : isToday ? "bg-emerald-50/60" : ""
+                    type="button"
+                    data-testid="grid-cell"
+                    aria-label={`${p.name}, ${d}`}
+                    onClick={() => setSelected({ pointId: p.id, date: d })}
+                    className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-lg p-1 ${
+                      isMissing ? "bg-amber-50" : isToday ? "bg-emerald-50/70" : "bg-slate-50"
                     }`}
                   >
-                    <button
-                      type="button"
-                      onClick={() => setSelected({ pointId: p.id, date: d })}
-                      className="flex h-12 w-full flex-wrap items-center justify-center gap-0.5 p-0.5"
-                    >
+                    <div className="flex flex-wrap items-center justify-center gap-1">
                       {shown.map((e) => (
                         <Avatar key={e.shiftId} entry={e} />
                       ))}
                       {overflow > 0 && (
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-bold text-slate-500">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[11px] font-bold text-slate-600">
                           +{overflow}
                         </span>
                       )}
                       {isMissing && <WarnBadge />}
-                    </button>
-                  </td>
+                    </div>
+                  </button>
                 );
               })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+            </div>
+          </div>
+        ))}
+      </div>
 
       {selected && activePoint && (
         <div

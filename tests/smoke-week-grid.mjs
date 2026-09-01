@@ -59,7 +59,7 @@ try {
   log("no submit button while slots missing", submitBtnCount === 0);
 
   // Tap the first grid cell to open the bottom sheet and assign an employee
-  const firstCell = owner.locator("table button").first();
+  const firstCell = owner.locator("[data-testid=\"grid-cell\"]").first();
   await firstCell.click();
   await owner.waitForTimeout(300);
   const sheetVisible = await owner.locator('text=Добавить сотрудника').count();
@@ -78,7 +78,7 @@ try {
   await owner.waitForTimeout(300);
 
   // owner + manager assignable check: open add form again, confirm dropdown includes manager/owner
-  const secondCellBtn = owner.locator("table button").nth(1);
+  const secondCellBtn = owner.locator("[data-testid=\"grid-cell\"]").nth(1);
   await secondCellBtn.click({ timeout: 5000 });
   await owner.waitForTimeout(200);
   await owner.locator('button:has-text("Добавить сотрудника")').first().click();

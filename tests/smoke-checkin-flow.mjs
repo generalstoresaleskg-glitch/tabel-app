@@ -48,7 +48,7 @@ try {
 
   // Grid rows = points (Ноокат first), columns = Mon..Sun. Today is 2026-09-01
   // (Tuesday), the 2nd column -> index 1 within the first row's cells.
-  const todayCell = emp.locator("table button").nth(1);
+  const todayCell = emp.locator("[data-testid=\"grid-cell\"]").nth(1);
   await todayCell.click({ timeout: 5000 });
   await emp.waitForTimeout(300);
   const sheetBody = await emp.textContent("body");
