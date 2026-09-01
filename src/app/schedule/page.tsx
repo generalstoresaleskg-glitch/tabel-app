@@ -5,6 +5,7 @@ import {
   addDays,
   weekDates,
   weekdayShort,
+  weekdayFull,
   formatDateHuman,
   todayISO,
   formatTimeHHMM,
@@ -28,6 +29,7 @@ import {
 } from "./actions";
 import { checkIn, checkOut, markVisit } from "./attendance-actions";
 import { DayCheckboxes } from "@/components/day-checkboxes";
+import { TeamDayView, TeamEntry } from "@/components/team-day-view";
 import { pointColor } from "@/lib/point-color";
 import { userColor, initials } from "@/lib/user-color";
 
@@ -72,8 +74,9 @@ function UserAvatar({ user }: { user: UserLite | null }) {
   );
 }
 
-function AttendanceBadge({ row }: { row: ShiftRow }) {
+function AttendanceBadge({ row, light }: { row: ShiftRow; light?: boolean }) {
   const { shift, attendance } = row;
+  const textClass = light ? "text-indigo-100" : "text-slate-600";
   if (shift.type === "SHIFT") {
     if (!attendance?.checkinAt) return null;
     const late =
@@ -81,7 +84,7 @@ function AttendanceBadge({ row }: { row: ShiftRow }) {
         ? ` (опоздание ${attendance.checkinLateMinutes} мин)`
         : "";
     return (
-      <div className="text-slate-600">
+      <div className={textClass}>
         приход {formatTimeHHMM(attendance.checkinAt)}
         {late}
         {attendance.checkoutAt && (
@@ -92,7 +95,7 @@ function AttendanceBadge({ row }: { row: ShiftRow }) {
   }
   if (!attendance?.checkinAt) return null;
   return (
-    <div className="text-slate-600">
+    <div className={textClass}>
       визит отмечен {formatTimeHHMM(attendance.checkinAt)}
     </div>
   );
@@ -100,24 +103,33 @@ function AttendanceBadge({ row }: { row: ShiftRow }) {
 
 // Кнопки прихода/ухода — только для собственных смен и только пока график
 // опубликован (viewerId защищает от "мёртвых" кнопок на чужих карточках).
+// size="lg" — крупная кнопка для карточки "Сегодня" на телефоне.
 function ShiftActions({
   row,
   scheduleStatus,
   viewerId,
+  size = "sm",
 }: {
   row: ShiftRow;
   scheduleStatus: string;
   viewerId: string;
+  size?: "sm" | "lg";
 }) {
   const { shift, attendance } = row;
   if (scheduleStatus !== "published") return null;
   if (shift.userId !== viewerId) return null;
 
+  const lg = size === "lg";
+  const primaryLg = lg
+    ? "w-full !py-3.5 !text-base !rounded-xl !bg-white !text-indigo-700 hover:!bg-indigo-50"
+    : "w-full";
+  const secondaryLg = lg ? "w-full !py-3.5 !text-base !rounded-xl" : "w-full";
+
   if (shift.type === "VISIT") {
     if (attendance?.checkinAt) return null;
     return (
       <form action={markVisit.bind(null, shift.id)}>
-        <button className="btn-primary btn-sm w-full">Посетила точку</button>
+        <button className={`btn-primary btn-sm ${primaryLg}`}>Посетила точку</button>
       </form>
     );
   }
@@ -125,18 +137,66 @@ function ShiftActions({
   if (!attendance?.checkinAt) {
     return (
       <form action={checkIn.bind(null, shift.id)}>
-        <button className="btn-primary btn-sm w-full">Я на месте</button>
+        <button className={`btn-primary btn-sm ${primaryLg}`}>Я на месте</button>
       </form>
     );
   }
   if (!attendance.checkoutAt) {
     return (
       <form action={checkOut.bind(null, shift.id)}>
-        <button className="btn-secondary btn-sm w-full">Я ухожу</button>
+        <button className={`btn-secondary btn-sm ${secondaryLg}`}>Я ухожу</button>
       </form>
     );
   }
   return null;
+}
+
+// Крупная карточка "Сегодня" — первое, что видит сотрудник: куда идти и одна
+// большая кнопка отметиться, без необходимости листать всю неделю.
+function MyTodayCard({
+  rows,
+  todayLabel,
+  viewerId,
+  scheduleStatus,
+}: {
+  rows: ShiftRow[];
+  todayLabel: string;
+  viewerId: string;
+  scheduleStatus: string;
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-2xl bg-slate-900 p-5 text-white">
+        <p className="text-sm text-slate-300">{todayLabel}</p>
+        <p className="mt-1 text-xl font-semibold">Сегодня выходной</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {rows.map((r) => (
+        <div
+          key={r.shift.id}
+          className="space-y-3 rounded-2xl bg-indigo-600 p-5 text-white shadow-lg shadow-indigo-600/20"
+        >
+          <p className="text-sm text-indigo-100">{todayLabel}</p>
+          {r.point && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-sm font-medium">
+              <span className="h-1.5 w-1.5 rounded-full bg-white" />
+              {r.point.name}
+            </span>
+          )}
+          <p className="text-2xl font-bold leading-tight">
+            {r.shift.type === "SHIFT"
+              ? `${r.shift.plannedStart}–${r.shift.plannedEnd}`
+              : `Визит${r.shift.note ? ": " + r.shift.note : ""}`}
+          </p>
+          <AttendanceBadge row={r} light />
+          <ShiftActions row={r} scheduleStatus={scheduleStatus} viewerId={viewerId} size="lg" />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // Переключатель "Смена / Визит-задача" — чистый CSS (.type-toggle в globals.css),
@@ -319,16 +379,19 @@ function MyScheduleList({
   scheduleStatus,
   today,
   viewerId,
+  skipToday,
 }: {
   dates: string[];
   myByDate: Map<string, ShiftRow[]>;
   scheduleStatus: string;
   today: string;
   viewerId: string;
+  skipToday?: boolean;
 }) {
   return (
     <div className="space-y-3">
       {dates.map((d) => {
+        if (skipToday && d === today) return null;
         const rows = myByDate.get(d) ?? [];
         const isToday = d === today;
         return (
@@ -445,6 +508,23 @@ export default async function SchedulePage({
     }
   }
 
+  // Плоский список для "графика всей команды" на телефоне (день-пикер + список).
+  const teamEntries: TeamEntry[] = shiftRows
+    .filter((r) => r.user)
+    .map((r) => ({
+      shiftId: r.shift.id,
+      userId: r.shift.userId,
+      userName: r.user!.name,
+      pointId: r.shift.pointId,
+      pointName: r.point?.name ?? "—",
+      date: r.shift.date,
+      timeLabel:
+        r.shift.type === "SHIFT"
+          ? `${r.shift.plannedStart}–${r.shift.plannedEnd}`
+          : `Визит${r.shift.note ? ": " + r.shift.note : ""}`,
+      doubleBooked: isDoubleBooked(r),
+    }));
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -548,29 +628,28 @@ export default async function SchedulePage({
 
       {schedule && !canManage && (
         <>
+          {dates.includes(today) && (
+            <MyTodayCard
+              rows={myByDate.get(today) ?? []}
+              todayLabel={`Сегодня, ${weekdayFull(today)} ${formatDateHuman(today)}`}
+              viewerId={me.id}
+              scheduleStatus={schedule.status}
+            />
+          )}
+
           <MyScheduleList
             dates={dates}
             myByDate={myByDate}
             scheduleStatus={schedule.status}
             today={today}
             viewerId={me.id}
+            skipToday={dates.includes(today)}
           />
 
           <details className="card-pad">
             <summary className="cursor-pointer section-title">Показать график всей команды ▾</summary>
             <div className="mt-3">
-              <ScheduleGrid
-                rows={assignableUsers}
-                dates={dates}
-                today={today}
-                byUserDate={byUserDate}
-                scheduleId={schedule.id}
-                scheduleStatus={schedule.status}
-                editable={false}
-                allPoints={allPoints}
-                isDoubleBooked={isDoubleBooked}
-                viewerId={me.id}
-              />
+              <TeamDayView dates={dates} today={today} entries={teamEntries} />
             </div>
           </details>
         </>

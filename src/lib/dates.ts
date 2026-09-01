@@ -24,11 +24,26 @@ export function weekDates(weekStart: string): string[] {
 }
 
 const WEEKDAY_NAMES = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+const WEEKDAY_FULL = [
+  "Понедельник",
+  "Вторник",
+  "Среда",
+  "Четверг",
+  "Пятница",
+  "Суббота",
+  "Воскресенье",
+];
 
 export function weekdayShort(dateStr: string): string {
   const d = new Date(dateStr + "T00:00:00");
   const day = d.getDay();
   return WEEKDAY_NAMES[day === 0 ? 6 : day - 1];
+}
+
+export function weekdayFull(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  const day = d.getDay();
+  return WEEKDAY_FULL[day === 0 ? 6 : day - 1];
 }
 
 export function formatDateHuman(dateStr: string): string {
