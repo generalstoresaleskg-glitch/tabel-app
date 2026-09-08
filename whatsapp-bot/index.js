@@ -137,17 +137,24 @@ app.get("/qr", checkToken, (req, res) => {
   }
   if (!latestQrDataUrl) {
     return res.send(
-      `<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;text-align:center;padding:40px">
+      `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="5">
+      <body style="font-family:sans-serif;text-align:center;padding:40px">
         <h2>Код ещё готовится…</h2>
-        <p>Обновите страницу через несколько секунд.</p>
+        <p>Страница обновится сама через пару секунд.</p>
       </body>`
     );
   }
+  // WhatsApp сам меняет QR-код каждые ~20 секунд (это нормально — так устроена
+  // привязка устройств), поэтому страница обязательно должна обновляться сама:
+  // иначе человек наводит камеру на уже устаревший код и получает в WhatsApp
+  // ошибку вида «проверьте соединение и повторите попытку».
   res.send(
-    `<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;text-align:center;padding:40px">
+    `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="12">
+    <body style="font-family:sans-serif;text-align:center;padding:40px">
       <h2>Отсканируйте код в WhatsApp</h2>
       <p>WhatsApp → Настройки → Связанные устройства → Привязать устройство</p>
       <img src="${latestQrDataUrl}" style="width:280px;height:280px" />
+      <p style="color:#888;font-size:13px">Код обновляется автоматически — если не успели, просто наведите камеру ещё раз через пару секунд.</p>
     </body>`
   );
 });
