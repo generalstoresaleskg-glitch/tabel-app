@@ -1,5 +1,12 @@
 // Утилиты для работы с неделями/датами в формате YYYY-MM-DD
 
+// Все точки работают по времени Бишкека (UTC+6, без перехода на летнее) —
+// сервер (Vercel) по умолчанию считает время в UTC, поэтому часовой пояс
+// нигде нельзя оставлять "по умолчанию": иначе "сегодня", время в
+// уведомлениях и расчёт опозданий/переработок съезжают на 6 часов.
+const BISHKEK_TZ = "Asia/Bishkek";
+const BISHKEK_OFFSET_MINUTES = 6 * 60;
+
 export function toISODate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
@@ -51,26 +58,32 @@ export function formatDateHuman(dateStr: string): string {
   return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
 }
 
+// "Сегодня" — по календарной дате в Бишкеке, а не по UTC-дате сервера
+// (иначе первые 6 часов каждых суток по Бишкеку "сегодня" показывало бы
+// вчерашний день).
 export function todayISO(): string {
-  return toISODate(new Date());
+  return new Date(Date.now() + BISHKEK_OFFSET_MINUTES * 60000).toISOString().slice(0, 10);
 }
 
 export function nowISO(): string {
   return new Date().toISOString();
 }
 
-// Сравнение факт. времени HH:MM (из ISO datetime) с плановым HH:MM
+// Сравнение факт. времени HH:MM (из ISO datetime) с плановым HH:MM — оба в
+// часовом поясе Бишкека, независимо от того, в каком часовом поясе сейчас
+// исполняется сам код сервера.
 export function minutesDiff(plannedHHMM: string, actualISO: string): number {
   const actual = new Date(actualISO);
+  const actualBishkekMs = actual.getTime() + BISHKEK_OFFSET_MINUTES * 60000;
   const [h, m] = plannedHHMM.split(":").map(Number);
-  const planned = new Date(actual);
-  planned.setHours(h, m, 0, 0);
-  return Math.round((actual.getTime() - planned.getTime()) / 60000);
+  const plannedBishkek = new Date(actualBishkekMs);
+  plannedBishkek.setUTCHours(h, m, 0, 0);
+  return Math.round((actualBishkekMs - plannedBishkek.getTime()) / 60000);
 }
 
 export function currentMonthStr(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const d = new Date(Date.now() + BISHKEK_OFFSET_MINUTES * 60000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 export function shiftMonth(monthStr: string, delta: number): string {
@@ -95,5 +108,9 @@ export function monthLabel(monthStr: string): string {
 
 export function formatTimeHHMM(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: BISHKEK_TZ,
+  });
 }
