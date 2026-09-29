@@ -16,6 +16,7 @@
     "render-build": "npm run db:migrate && npm run db:seed:ensure && npm run build"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "@types/bcryptjs": "^2.4.6",
     "bcryptjs": "^3.0.3",
     "date-fns": "^4.4.0",
