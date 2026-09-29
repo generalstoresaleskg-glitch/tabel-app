@@ -33,6 +33,12 @@ const ICONS = {
       <circle cx="12" cy="10" r="2.5" />
     </svg>
   ),
+  book: (
+    <svg viewBox="0 0 24 24" fill="none" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
+      <path d="M4 5.5C4 4.7 4.7 4 5.5 4H12v16H5.5A1.5 1.5 0 0 1 4 18.5v-13Z" strokeLinejoin="round" />
+      <path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H12v16h6.5a1.5 1.5 0 0 0 1.5-1.5v-13Z" strokeLinejoin="round" />
+    </svg>
+  ),
 };
 
 // Люди/Точки убраны отсюда — для владельца и управляющей это теперь пункты
@@ -44,6 +50,7 @@ export function BottomNav({ canManage, isOwner }: { canManage: boolean; isOwner:
 
   const tabs: Tab[] = [
     { href: "/schedule", label: "График", icon: ICONS.calendar },
+    { href: "/training", label: "Обучение", icon: ICONS.book },
     { href: "/tabel", label: "Табель", icon: ICONS.clock },
   ];
 

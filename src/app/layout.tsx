@@ -141,6 +141,7 @@ export default async function RootLayout({
               {/* нижняя таб-панель (см. ниже), чтобы было похоже на приложение. */}
               <nav className="hidden sm:flex flex-wrap items-center gap-1.5 overflow-x-auto pb-3 -mx-1 px-1">
                 <NavLink href="/schedule">График</NavLink>
+                <NavLink href="/training">Обучение</NavLink>
                 <NavLink href="/tabel">Табель</NavLink>
                 {(user.role === "owner" || user.role === "manager") && (
                   <NavLink href="/employees">Сотрудники</NavLink>

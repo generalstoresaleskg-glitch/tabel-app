@@ -10,6 +10,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/db/seed.ts",
+    "db:seed:training": "tsx src/db/seed-training.ts",
     "db:seed:ensure": "tsx src/db/ensure-seed.ts",
     "db:setup": "npm run db:migrate && npm run db:seed",
     "render-build": "npm run db:migrate && npm run db:seed:ensure && npm run build"

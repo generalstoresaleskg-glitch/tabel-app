@@ -95,3 +95,76 @@ export const scheduleChangeLog = pgTable("schedule_change_log", {
   description: text("description").notNull(),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 });
+
+// ===== Обучение =====
+// Курс = один модуль программы обучения (напр. "Кожа и типы кожи").
+export const courses = pgTable("courses", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull().unique(), // "m1", "m2", ...
+  moduleNumber: integer("module_number").notNull(),
+  title: text("title").notNull(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+});
+
+// Урок внутри модуля — страницы исходной презентации отрендерены в картинки
+// (сохраняем визуал 1:1), пути к ним лежат прямо в строке урока по порядку.
+export const lessons = pgTable("lessons", {
+  id: text("id").primaryKey(),
+  courseId: text("course_id")
+    .notNull()
+    .references(() => courses.id, { onDelete: "cascade" }),
+  slug: text("slug").notNull().unique(), // "m1-l1"
+  lessonNumber: integer("lesson_number").notNull(),
+  title: text("title").notNull(),
+  images: text("images").array().notNull(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+});
+
+// Отметка "урок пройден" сотрудником (чтобы показывать прогресс по модулю).
+export const lessonProgress = pgTable("lesson_progress", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  lessonId: text("lesson_id")
+    .notNull()
+    .references(() => lessons.id, { onDelete: "cascade" }),
+  completedAt: text("completed_at").notNull().default(sql`now()::text`),
+});
+
+// Тест в конце модуля — один вопрос с несколькими вариантами, один правильный.
+export const quizQuestions = pgTable("quiz_questions", {
+  id: text("id").primaryKey(),
+  courseId: text("course_id")
+    .notNull()
+    .references(() => courses.id, { onDelete: "cascade" }),
+  orderIndex: integer("order_index").notNull().default(0),
+  question: text("question").notNull(),
+});
+
+export const quizOptions = pgTable("quiz_options", {
+  id: text("id").primaryKey(),
+  questionId: text("question_id")
+    .notNull()
+    .references(() => quizQuestions.id, { onDelete: "cascade" }),
+  orderIndex: integer("order_index").notNull().default(0),
+  text: text("text").notNull(),
+  isCorrect: boolean("is_correct").notNull().default(false),
+});
+
+// Попытка прохождения теста сотрудником — владелец/управляющая видят историю
+// попыток по каждому сотруднику и модулю (сколько раз пытался, лучший результат).
+export const quizAttempts = pgTable("quiz_attempts", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  courseId: text("course_id")
+    .notNull()
+    .references(() => courses.id, { onDelete: "cascade" }),
+  score: integer("score").notNull(),
+  total: integer("total").notNull(),
+  percent: integer("percent").notNull(),
+  passed: boolean("passed").notNull(),
+  completedAt: text("completed_at").notNull().default(sql`now()::text`),
+});
