@@ -120,12 +120,20 @@ export const lessons = pgTable("lessons", {
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 });
 
-// Отметка "урок пройден" сотрудником (чтобы показывать прогресс по модулю).
+// "Гость" — человек, который прошёл по публичной ссылке на обучение
+// (/uchenik) и представился именем, без создания полноценного аккаунта.
+export const guestLearners = pgTable("guest_learners", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+});
+
+// Отметка "урок пройден" — либо сотрудником (user_id), либо гостем по ссылке
+// (guest_id). Ровно одно из двух полей заполнено — проверяется в коде.
 export const lessonProgress = pgTable("lesson_progress", {
   id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+  guestId: text("guest_id").references(() => guestLearners.id, { onDelete: "cascade" }),
   lessonId: text("lesson_id")
     .notNull()
     .references(() => lessons.id, { onDelete: "cascade" }),
@@ -152,13 +160,13 @@ export const quizOptions = pgTable("quiz_options", {
   isCorrect: boolean("is_correct").notNull().default(false),
 });
 
-// Попытка прохождения теста сотрудником — владелец/управляющая видят историю
-// попыток по каждому сотруднику и модулю (сколько раз пытался, лучший результат).
+// Попытка прохождения теста — сотрудником (user_id) или гостем по ссылке
+// (guest_id), ровно одно из двух. Владелец/управляющая видят историю попыток
+// по каждому человеку и модулю (сколько раз пытался, лучший результат).
 export const quizAttempts = pgTable("quiz_attempts", {
   id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+  guestId: text("guest_id").references(() => guestLearners.id, { onDelete: "cascade" }),
   courseId: text("course_id")
     .notNull()
     .references(() => courses.id, { onDelete: "cascade" }),

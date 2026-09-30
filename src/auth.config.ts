@@ -8,6 +8,10 @@ export const authConfig = {
       const isLoggedIn = !!auth?.user;
       const { pathname } = request.nextUrl;
       if (pathname.startsWith("/login")) return true;
+      // Публичный раздел обучения по ссылке (/uchenik) — без входа в систему,
+      // личность гостя проверяется отдельной кукой (см. src/lib/guest-session.ts),
+      // не сессией NextAuth.
+      if (pathname === "/uchenik" || pathname.startsWith("/uchenik/")) return true;
       return isLoggedIn;
     },
     jwt({ token, user }) {

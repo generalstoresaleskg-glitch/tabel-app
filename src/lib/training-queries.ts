@@ -8,6 +8,7 @@ import {
   quizOptions,
   quizAttempts,
   users,
+  guestLearners,
 } from "@/db/schema";
 
 export async function getCourses() {
@@ -154,6 +155,39 @@ export async function getMyBestAttempt(userId: string, courseId: string) {
   };
 }
 
+// Те же две функции, что выше, но для гостя (по ссылке /uchenik), а не
+// сотрудника — отдельные, чтобы не трогать рабочую логику для сотрудников.
+export async function getGuestLessonProgress(guestId: string, courseId: string) {
+  const courseLessons = await getCourseLessons(courseId);
+  if (courseLessons.length === 0) return { completedLessonIds: new Set<string>(), total: 0 };
+
+  const rows = await db
+    .select()
+    .from(lessonProgress)
+    .where(eq(lessonProgress.guestId, guestId));
+
+  const lessonIds = new Set(courseLessons.map((l) => l.id));
+  const completedLessonIds = new Set(
+    rows.filter((r) => lessonIds.has(r.lessonId)).map((r) => r.lessonId)
+  );
+
+  return { completedLessonIds, total: courseLessons.length };
+}
+
+export async function getGuestBestAttempt(guestId: string, courseId: string) {
+  const rows = await db.select().from(quizAttempts).where(eq(quizAttempts.guestId, guestId));
+
+  const forCourse = rows.filter((r) => r.courseId === courseId);
+  if (forCourse.length === 0) return null;
+
+  forCourse.sort((a, b) => b.percent - a.percent);
+  return {
+    best: forCourse[0],
+    attemptsCount: forCourse.length,
+    everPassed: forCourse.some((r) => r.passed),
+  };
+}
+
 export async function getAttemptById(id: string) {
   const rows = await db.select().from(quizAttempts).where(eq(quizAttempts.id, id));
   const attempt = rows[0];
@@ -162,23 +196,28 @@ export async function getAttemptById(id: string) {
   return { attempt, course: course[0] ?? null };
 }
 
-// Для владельца/управляющей: сводка попыток по всем сотрудникам и модулям.
+// Для владельца/управляющей: сводка попыток по всем сотрудникам, ПЛЮС по
+// гостям, зашедшим по публичной ссылке /uchenik — помечены отдельным полем
+// kind, чтобы в интерфейсе можно было показать, откуда результат.
 export async function getAttemptSummary() {
   const allAttempts = await db
     .select()
     .from(quizAttempts)
     .orderBy(desc(quizAttempts.completedAt));
   const allUsers = await db.select().from(users);
+  const allGuests = await db.select().from(guestLearners);
   const allCourses = await db.select().from(courses);
 
   const userById = new Map(allUsers.map((u) => [u.id, u]));
+  const guestById = new Map(allGuests.map((g) => [g.id, g]));
   const courseById = new Map(allCourses.map((c) => [c.id, c]));
 
-  type Key = string; // `${userId}::${courseId}`
+  type Key = string; // `${kind}:${personId}::${courseId}`
   const summary = new Map<
     Key,
     {
-      userId: string;
+      kind: "employee" | "guest";
+      personId: string;
       userName: string;
       courseId: string;
       courseTitle: string;
@@ -192,15 +231,21 @@ export async function getAttemptSummary() {
   >();
 
   for (const a of allAttempts) {
-    const user = userById.get(a.userId);
     const course = courseById.get(a.courseId);
-    if (!user || !course) continue;
-    const key: Key = `${a.userId}::${a.courseId}`;
+    if (!course) continue;
+
+    const kind: "employee" | "guest" = a.userId ? "employee" : "guest";
+    const personId = a.userId ?? a.guestId ?? "";
+    const personName = a.userId ? userById.get(a.userId)?.name : guestById.get(personId)?.name;
+    if (!personName || !personId) continue;
+
+    const key: Key = `${kind}:${personId}::${a.courseId}`;
     const existing = summary.get(key);
     if (!existing) {
       summary.set(key, {
-        userId: a.userId,
-        userName: user.name,
+        kind,
+        personId,
+        userName: personName,
         courseId: a.courseId,
         courseTitle: course.title,
         moduleNumber: course.moduleNumber,
@@ -215,7 +260,7 @@ export async function getAttemptSummary() {
       existing.bestPercent = Math.max(existing.bestPercent, a.percent);
       existing.everPassed = existing.everPassed || a.passed;
       // allAttempts уже отсортирован по completedAt desc, поэтому первая
-      // встреченная попытка для пары user+course — самая свежая.
+      // встреченная попытка для пары человек+курс — самая свежая.
     }
   }
 

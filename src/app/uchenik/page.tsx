@@ -1,40 +1,60 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/session";
-import { getCourses, getMyLessonProgress, getMyBestAttempt } from "@/lib/training-queries";
-import { CopyGuestLink } from "@/components/copy-guest-link";
+import { getCurrentGuest } from "@/lib/guest-session";
+import { getCourses, getGuestLessonProgress, getGuestBestAttempt } from "@/lib/training-queries";
+import { startGuest } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function TrainingPage() {
-  const me = await requireUser();
-  const canManage = me.role === "owner" || me.role === "manager";
-  const allCourses = await getCourses();
+export default async function UchenikPage() {
+  const guest = await getCurrentGuest();
 
+  if (!guest) {
+    return (
+      <div className="mx-auto max-w-sm space-y-6 pt-10 text-center">
+        <div>
+          <h1 className="page-title">Обучение AYAY KYZ</h1>
+          <p className="page-subtitle">Как к вам обращаться?</p>
+        </div>
+        <form action={startGuest} className="space-y-3 text-left">
+          <div>
+            <label className="field-label" htmlFor="name">
+              Имя
+            </label>
+            <input
+              id="name"
+              name="name"
+              type="text"
+              required
+              maxLength={80}
+              autoFocus
+              placeholder="Например, Айгерим"
+              className="input"
+            />
+          </div>
+          <button type="submit" className="btn-primary w-full">
+            Начать обучение
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  const allCourses = await getCourses();
   const rows = await Promise.all(
     allCourses.map(async (c) => {
-      const progress = await getMyLessonProgress(me.id, c.id);
-      const attempt = await getMyBestAttempt(me.id, c.id);
+      const progress = await getGuestLessonProgress(guest.id, c.id);
+      const attempt = await getGuestBestAttempt(guest.id, c.id);
       return { course: c, progress, attempt };
     })
   );
 
   return (
     <div className="space-y-8">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="page-title">Обучение</h1>
-          <p className="page-subtitle">
-            {rows.length} модулей · пройдите уроки и тест в конце каждого модуля.
-          </p>
-        </div>
-        {canManage && (
-          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-            <CopyGuestLink path="/uchenik" />
-            <Link href="/training/results" className="btn-secondary btn-sm shrink-0">
-              Результаты
-            </Link>
-          </div>
-        )}
+      <div>
+        <h1 className="page-title">Обучение AYAY KYZ</h1>
+        <p className="page-subtitle">
+          {guest.name} · {rows.length} модулей · пройдите уроки и тест в конце каждого модуля.
+        </p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -45,7 +65,7 @@ export default async function TrainingPage() {
           return (
             <Link
               key={course.id}
-              href={`/training/${course.slug}`}
+              href={`/uchenik/${course.slug}`}
               className="card-pad flex flex-col gap-3 transition-shadow hover:shadow-md"
             >
               <div className="flex items-center justify-between gap-2">
