@@ -25,6 +25,12 @@ const PORT = process.env.PORT || 10000;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const GROUP_ID = process.env.WHATSAPP_GROUP_ID || "";
 const REDIS_URL = process.env.REDIS_URL;
+// Render сам подставляет публичный адрес сервиса. По нему бот раз в 10 минут
+// стучится сам к себе: бесплатный тариф усыпляет сервис после ~15 минут без
+// входящих запросов, а спящий бот просыпается до минуты — за это время
+// приложение перестаёт ждать, и уведомление о приходе/уходе теряется.
+const SELF_URL = (process.env.RENDER_EXTERNAL_URL || "").replace(/\/$/, "");
+const KEEP_AWAKE_MS = 10 * 60 * 1000;
 
 if (!BOT_TOKEN) {
   console.error("BOT_TOKEN не задан — без него /notify и /groups не будут работать. Остановка.");
@@ -175,11 +181,21 @@ app.get("/groups", checkToken, async (req, res) => {
   }
 });
 
+// Если соединение с WhatsApp как раз переподключается (это бывает раз в
+// несколько часов и длится пару секунд), не отказываем сразу, а немного ждём.
+async function waitForOpen(ms) {
+  const until = Date.now() + ms;
+  while (connectionStatus !== "open" && Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return connectionStatus === "open";
+}
+
 app.post("/notify", checkToken, async (req, res) => {
   const message = String(req.body?.message ?? "").trim();
   if (!message) return res.status(400).json({ error: "Пустое сообщение" });
   if (!GROUP_ID) return res.status(500).json({ error: "WHATSAPP_GROUP_ID не настроен" });
-  if (connectionStatus !== "open") return res.status(503).json({ error: "WhatsApp ещё не подключён" });
+  if (!(await waitForOpen(10000))) return res.status(503).json({ error: "WhatsApp ещё не подключён" });
 
   try {
     await sock.sendMessage(GROUP_ID, { text: message });
@@ -193,3 +209,12 @@ app.post("/notify", checkToken, async (req, res) => {
 app.listen(PORT, () => {
   logger.info(`HTTP-сервер бота слушает порт ${PORT}`);
 });
+
+if (SELF_URL) {
+  setInterval(() => {
+    fetch(`${SELF_URL}/health`, { signal: AbortSignal.timeout(30000) }).catch((err) =>
+      logger.warn({ err: err?.message }, "Самопинг не прошёл — попробую через 10 минут")
+    );
+  }, KEEP_AWAKE_MS);
+  logger.info(`Защита от засыпания включена: пинг ${SELF_URL}/health каждые 10 минут.`);
+}
