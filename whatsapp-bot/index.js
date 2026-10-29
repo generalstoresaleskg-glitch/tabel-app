@@ -89,6 +89,17 @@ async function startSock() {
       latestQrDataUrl = null;
       connectionStatus = "open";
       logger.info({ me: sock.user }, "WhatsApp подключён.");
+      // Список чатов бота в логах — чтобы при смене общего чата сразу видеть
+      // его id для WHATSAPP_GROUP_ID, не открывая /groups вручную.
+      sock
+        .groupFetchAllParticipating()
+        .then((groups) => {
+          const list = Object.values(groups).map((g) => ({ id: g.id, name: g.subject }));
+          const current = list.find((g) => g.id === GROUP_ID);
+          logger.info({ groups: list, current: current?.name ?? null }, "Чаты бота");
+          if (!current) logger.warn({ GROUP_ID }, "Бот не состоит в чате WHATSAPP_GROUP_ID — уведомления туда не дойдут");
+        })
+        .catch((err) => logger.warn({ err: err?.message }, "Не удалось получить список чатов"));
     }
 
     if (connection === "close") {
