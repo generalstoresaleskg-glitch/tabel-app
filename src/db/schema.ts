@@ -176,3 +176,21 @@ export const quizAttempts = pgTable("quiz_attempts", {
   passed: boolean("passed").notNull(),
   completedAt: text("completed_at").notNull().default(sql`now()::text`),
 });
+
+// Клиенты магазина: сотрудники заводят их командой «/клиент ФИО телефон ДР» в
+// общем чате WhatsApp (или вручную на странице «Клиенты»). Нужны для
+// поздравлений с днём рождения и будущих рассылок/акций.
+// Телефон уникален: повторное сообщение с тем же номером обновляет данные.
+export const clients = pgTable("clients", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  phone: text("phone").notNull().unique(), // +996555123456
+  birthDay: integer("birth_day").notNull(),
+  birthMonth: integer("birth_month").notNull(),
+  birthYear: integer("birth_year"), // год можно не указывать
+  source: text("source", { enum: ["whatsapp", "manual"] }).notNull().default("whatsapp"),
+  addedByUserId: text("added_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  addedByName: text("added_by_name"), // имя/номер из WhatsApp, если сотрудник не найден по телефону
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+});

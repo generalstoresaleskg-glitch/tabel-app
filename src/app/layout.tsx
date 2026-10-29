@@ -146,6 +146,9 @@ export default async function RootLayout({
                 {(user.role === "owner" || user.role === "manager") && (
                   <NavLink href="/employees">Сотрудники</NavLink>
                 )}
+                {(user.role === "owner" || user.role === "manager") && (
+                  <NavLink href="/clients">Клиенты</NavLink>
+                )}
                 {user.role === "owner" && (
                   <NavLink href="/points">Точки</NavLink>
                 )}

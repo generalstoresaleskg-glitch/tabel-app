@@ -31,6 +31,12 @@ const REDIS_URL = process.env.REDIS_URL;
 // приложение перестаёт ждать, и уведомление о приходе/уходе теряется.
 const SELF_URL = (process.env.RENDER_EXTERNAL_URL || "").replace(/\/$/, "");
 const KEEP_AWAKE_MS = 10 * 60 * 1000;
+// Адрес основного приложения (Vercel): сюда бот пересылает «/клиент …» и
+// отсюда берёт список именинников. Без него эти две функции молчат, а
+// уведомления о приходе/уходе работают как обычно.
+const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
+// Во сколько (час по Бишкеку) писать в чат про дни рождения клиентов.
+const BIRTHDAY_HOUR = Number(process.env.BIRTHDAY_HOUR || 9);
 
 if (!BOT_TOKEN) {
   console.error("BOT_TOKEN не задан — без него /notify и /groups не будут работать. Остановка.");
@@ -66,6 +72,9 @@ async function startSock() {
   });
 
   sock.ev.on("creds.update", saveCreds);
+  sock.ev.on("messages.upsert", (upsert) => {
+    handleIncoming(upsert).catch((err) => logger.error(err, "Ошибка при обработке входящих сообщений"));
+  });
 
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
@@ -103,6 +112,96 @@ async function startSock() {
 startSock().catch((err) => {
   logger.error(err, "Не удалось запустить подключение к WhatsApp.");
 });
+
+// --- Клиенты: «/клиент …» из общего чата ----------------------------------
+
+const CLIENT_COMMAND_RE = /^\s*[\/\\]\s*клиент(?![а-яё])/i;
+
+function messageText(msg) {
+  const m = msg?.ephemeralMessage?.message || msg?.viewOnceMessage?.message || msg;
+  return m?.conversation || m?.extendedTextMessage?.text || "";
+}
+
+// Номер отправителя цифрами (996XXXXXXXXX). В группах WhatsApp часто вместо
+// номера присылает скрытый id (…@lid), а настоящий номер кладёт в
+// participantAlt — берём тот, что заканчивается на @s.whatsapp.net.
+function senderPhone(m) {
+  const candidates = m.key.fromMe ? [sock?.user?.id] : [m.key.participant, m.key.participantAlt];
+  const jid = candidates.find((j) => j && j.endsWith("@s.whatsapp.net"));
+  return jid ? jid.split("@")[0].split(":")[0] : null;
+}
+
+async function callApp(path, options = {}) {
+  let lastErr;
+  // Приложение на Vercel и база Neon после простоя просыпаются не мгновенно —
+  // одна повторная попытка спасает от потери сообщения.
+  for (let i = 0; i < 2; i++) {
+    try {
+      const res = await fetch(`${APP_URL}${path}`, {
+        ...options,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${BOT_TOKEN}` },
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      return await res.json();
+    } catch (err) {
+      lastErr = err;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+  throw lastErr;
+}
+
+async function handleIncoming({ messages, type }) {
+  if (type !== "notify" || !APP_URL) return;
+  for (const m of messages) {
+    if (m.key.remoteJid !== GROUP_ID || !m.message) continue;
+    const text = messageText(m.message);
+    if (!CLIENT_COMMAND_RE.test(text)) continue;
+    // После переподключения WhatsApp досылает старые сообщения — их не трогаем,
+    // иначе бот ответит на давно обработанные команды повторно.
+    const ts = Number(m.messageTimestamp || 0) * 1000;
+    if (ts && Date.now() - ts > 10 * 60 * 1000) continue;
+
+    let reply;
+    try {
+      const r = await callApp("/api/clients/ingest", {
+        method: "POST",
+        body: JSON.stringify({ text, senderPhone: senderPhone(m), senderName: m.pushName || null }),
+      });
+      if (r.ignored) continue;
+      reply = r.reply;
+      logger.info({ status: r.status, ok: r.ok }, "Команда /клиент обработана");
+    } catch (err) {
+      logger.error({ err: err?.message }, "Не удалось передать клиента в приложение");
+      reply = "⚠️ Не получилось сохранить клиента — система не ответила. Отправьте сообщение ещё раз через минуту.";
+    }
+    if (reply) await sock.sendMessage(GROUP_ID, { text: reply }, { quoted: m });
+  }
+}
+
+// --- Дни рождения: раз в день утром ----------------------------------------
+
+function bishkekNow() {
+  const d = new Date(Date.now() + 6 * 60 * 60 * 1000); // UTC+6, без перехода на летнее время
+  return { date: d.toISOString().slice(0, 10), hour: d.getUTCHours() };
+}
+
+async function birthdayCheck() {
+  if (!APP_URL || !GROUP_ID || connectionStatus !== "open") return;
+  const { date, hour } = bishkekNow();
+  if (hour < BIRTHDAY_HOUR) return;
+  const key = `birthdays:sent:${date}`;
+  if (await redis.get(key)) return; // уже отправили сегодня (даже после перезапуска)
+  const r = await callApp("/api/clients/birthdays");
+  if (r.message) await sock.sendMessage(GROUP_ID, { text: r.message });
+  await redis.set(key, "1", "EX", 3 * 24 * 3600);
+  logger.info({ count: r.count }, "Проверка дней рождения выполнена");
+}
+
+setInterval(() => {
+  birthdayCheck().catch((err) => logger.error({ err: err?.message }, "Проверка дней рождения не удалась — повторю через 5 минут"));
+}, 5 * 60 * 1000);
 
 // --- HTTP-сервер -----------------------------------------------------------
 

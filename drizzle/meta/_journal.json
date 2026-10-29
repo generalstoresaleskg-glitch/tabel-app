@@ -29,6 +29,13 @@
       "when": 1790744519083,
       "tag": "0003_premium_ulik",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793265725963,
+      "tag": "0004_clients",
+      "breakpoints": true
     }
   ]
 }
