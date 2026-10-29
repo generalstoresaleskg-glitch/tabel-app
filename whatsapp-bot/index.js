@@ -164,6 +164,7 @@ async function handleIncoming({ messages, type }) {
     if (ts && Date.now() - ts > 10 * 60 * 1000) continue;
 
     let reply;
+    let birthday = null;
     try {
       const r = await callApp("/api/clients/ingest", {
         method: "POST",
@@ -171,31 +172,56 @@ async function handleIncoming({ messages, type }) {
       });
       if (r.ignored) continue;
       reply = r.reply;
-      logger.info({ status: r.status, ok: r.ok }, "Команда /клиент обработана");
+      birthday = r.birthday || null;
+      logger.info({ status: r.status, ok: r.ok, birthdayToday: !!birthday }, "Команда /клиент обработана");
     } catch (err) {
       logger.error({ err: err?.message }, "Не удалось передать клиента в приложение");
       reply = "⚠️ Не получилось сохранить клиента — система не ответила. Отправьте сообщение ещё раз через минуту.";
     }
     if (reply) await sock.sendMessage(GROUP_ID, { text: reply }, { quoted: m });
+    // У клиента день рождения сегодня — поздравление сразу, не дожидаясь утра.
+    if (birthday?.message && (await markAnnounced([birthday.id])).length) {
+      await sock.sendMessage(GROUP_ID, { text: birthday.message });
+    }
   }
 }
 
-// --- Дни рождения: раз в день утром ----------------------------------------
+// --- Дни рождения -----------------------------------------------------------
+//
+// Утром (BIRTHDAY_HOUR по Бишкеку) — одна проверка всей базы. Клиенты,
+// добавленные позже в тот же день, поздравляются сразу при добавлении (см.
+// handleIncoming). Чаще в приложение не ходим: каждое обращение будит базу
+// Neon, а её бесплатный лимит считается по времени бодрствования.
+// Кого уже поздравили сегодня, бот помнит в Redis — повторов не будет даже
+// после перезапуска.
 
 function bishkekNow() {
   const d = new Date(Date.now() + 6 * 60 * 60 * 1000); // UTC+6, без перехода на летнее время
   return { date: d.toISOString().slice(0, 10), hour: d.getUTCHours() };
 }
 
+// Отмечает клиентов как «сегодня поздравлены», возвращает тех, кто ещё не был.
+async function markAnnounced(ids) {
+  const key = `birthdays:announced:${bishkekNow().date}`;
+  const fresh = [];
+  for (const id of ids) if (await redis.sadd(key, id)) fresh.push(id);
+  await redis.expire(key, 3 * 24 * 3600);
+  return fresh;
+}
+
 async function birthdayCheck() {
   if (!APP_URL || !GROUP_ID || connectionStatus !== "open") return;
   const { date, hour } = bishkekNow();
   if (hour < BIRTHDAY_HOUR) return;
-  const key = `birthdays:sent:${date}`;
-  if (await redis.get(key)) return; // уже отправили сегодня (даже после перезапуска)
-  const r = await callApp("/api/clients/birthdays");
-  if (r.message) await sock.sendMessage(GROUP_ID, { text: r.message });
-  await redis.set(key, "1", "EX", 3 * 24 * 3600);
+  const doneKey = `birthdays:checked:${date}`;
+  if (await redis.get(doneKey)) return; // утренняя проверка сегодня уже была
+  const already = await redis.smembers(`birthdays:announced:${date}`);
+  const r = await callApp(`/api/clients/birthdays?exclude=${encodeURIComponent(already.join(","))}`);
+  if (r.message && r.ids?.length) {
+    await sock.sendMessage(GROUP_ID, { text: r.message });
+    await markAnnounced(r.ids);
+  }
+  await redis.set(doneKey, "1", "EX", 3 * 24 * 3600);
   logger.info({ count: r.count }, "Проверка дней рождения выполнена");
 }
 

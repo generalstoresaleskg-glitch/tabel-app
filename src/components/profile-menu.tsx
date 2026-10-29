@@ -83,9 +83,11 @@ export function ProfileMenu({
           <Link href="/employees" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
             Сотрудники
           </Link>
-          <Link href="/clients" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
-            Клиенты
-          </Link>
+          {isOwner && (
+            <Link href="/clients" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+              Клиенты
+            </Link>
+          )}
           {isOwner && (
             <Link href="/points" onClick={() => setOpen(false)} className="block px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
               Точки

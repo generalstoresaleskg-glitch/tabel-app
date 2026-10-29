@@ -28,17 +28,18 @@ export async function findUserByPhone(rawPhone: string) {
 export async function saveClient(
   c: ParsedClient,
   by: { source: "whatsapp" | "manual"; addedByUserId: string | null; addedByName: string | null }
-): Promise<{ status: "created" | "updated" }> {
+): Promise<{ status: "created" | "updated"; id: string }> {
   const existing = await db.select({ id: clients.id }).from(clients).where(eq(clients.phone, c.phone));
   if (existing[0]) {
     await db
       .update(clients)
       .set({ name: c.name, birthDay: c.day, birthMonth: c.month, birthYear: c.year, updatedAt: new Date().toISOString() })
       .where(eq(clients.id, existing[0].id));
-    return { status: "updated" };
+    return { status: "updated", id: existing[0].id };
   }
+  const id = randomUUID();
   await db.insert(clients).values({
-    id: randomUUID(),
+    id,
     name: c.name,
     phone: c.phone,
     birthDay: c.day,
@@ -48,7 +49,15 @@ export async function saveClient(
     addedByUserId: by.addedByUserId,
     addedByName: by.addedByName,
   });
-  return { status: "created" };
+  return { status: "created", id };
+}
+
+// Сегодня ли (по Бишкеку) день рождения — с той же поправкой на 29.02.
+export function isBirthdayToday(c: { day: number; month: number }, dateISO = todayISO()): boolean {
+  const [y, m, d] = dateISO.split("-").map(Number);
+  if (c.month === m && c.day === d) return true;
+  const isLeap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  return !isLeap && m === 2 && d === 28 && c.month === 2 && c.day === 29;
 }
 
 export function clientSummary(c: ParsedClient): string {
@@ -73,10 +82,15 @@ export async function birthdaysOn(dateISO = todayISO()) {
   return rows.map((r) => ({ ...r, turns: r.birthYear ? y - r.birthYear : null }));
 }
 
-export function birthdayMessage(list: Awaited<ReturnType<typeof birthdaysOn>>): string | null {
+// Текст поздравительного напоминания в общий чат:
+//   🎂 Сегодня день рождения!
+//   ФИО: Иванова Айгуль
+//   Телефон: +996 700 123 456
+//   Исполняется: 31
+export function birthdayMessage(list: { name: string; phone: string; turns: number | null }[]): string | null {
   if (!list.length) return null;
-  const lines = list.map(
-    (c) => `• ${c.name} — ${formatPhone(c.phone)}${c.turns ? ` (исполняется ${c.turns})` : ""}`
+  const blocks = list.map(
+    (c) => `ФИО: ${c.name}\nТелефон: ${formatPhone(c.phone)}${c.turns ? `\nИсполняется: ${c.turns}` : ""}`
   );
-  return `🎂 Сегодня день рождения у клиентов:\n${lines.join("\n")}\n\nНе забудьте поздравить!`;
+  return `🎂 Сегодня день рождения!\n\n${blocks.join("\n\n")}\n\nНе забудьте поздравить!`;
 }

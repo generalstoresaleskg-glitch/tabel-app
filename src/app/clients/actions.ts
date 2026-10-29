@@ -11,7 +11,7 @@ import { saveClient } from "@/lib/clients";
 export type AddClientState = { ok: boolean; message: string } | null;
 
 export async function addClient(_prev: AddClientState, formData: FormData): Promise<AddClientState> {
-  const me = await requireRole(["owner", "manager"]);
+  const me = await requireRole(["owner"]);
   const name = String(formData.get("name") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
   const birthday = String(formData.get("birthday") ?? "").trim();
@@ -29,7 +29,7 @@ export async function addClient(_prev: AddClientState, formData: FormData): Prom
 }
 
 export async function deleteClient(id: string) {
-  await requireRole(["owner", "manager"]);
+  await requireRole(["owner"]);
   await db.delete(clients).where(eq(clients.id, id));
   revalidatePath("/clients");
 }

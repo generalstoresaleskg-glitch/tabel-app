@@ -14,7 +14,7 @@ export default async function ClientsPage({
 }: {
   searchParams: Promise<{ q?: string; f?: string }>;
 }) {
-  await requireRole(["owner", "manager"]);
+  await requireRole(["owner"]);
   const { q: rawQ, f: rawF } = await searchParams;
   const q = (rawQ ?? "").trim();
   const filter: Filter = rawF === "today" || rawF === "month" ? rawF : "all";
@@ -77,7 +77,7 @@ export default async function ClientsPage({
           </p>
         </div>
         <a href="/clients/export" className="btn-primary btn-sm">
-          Скачать CSV
+          Скачать Excel
         </a>
       </div>
 

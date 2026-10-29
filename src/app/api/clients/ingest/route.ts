@@ -1,7 +1,15 @@
 // Бот пересылает сюда сообщения «/клиент …» из общего чата WhatsApp.
 // Ответ (reply) бот публикует в чат ответом на исходное сообщение.
 import { CLIENT_FORMAT_HINT, isClientCommand, parseClientMessage } from "@/lib/client-parse";
-import { clientSummary, findUserByPhone, isBotRequest, saveClient } from "@/lib/clients";
+import {
+  birthdayMessage,
+  clientSummary,
+  findUserByPhone,
+  isBirthdayToday,
+  isBotRequest,
+  saveClient,
+} from "@/lib/clients";
+import { todayISO } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +38,18 @@ export async function POST(request: Request) {
     addedByName: user?.name ?? senderName ?? (senderPhone ? "+" + senderPhone : null),
   });
 
+  // Если у только что добавленного клиента день рождения сегодня, бот сразу
+  // публикует поздравительное напоминание — утренняя рассылка уже могла пройти.
+  const c = parsed.client;
+  const turns = c.year ? Number(todayISO().slice(0, 4)) - c.year : null;
+  const birthday = isBirthdayToday(c)
+    ? { id: r.id, message: birthdayMessage([{ name: c.name, phone: c.phone, turns }]) }
+    : null;
+
   return Response.json({
     ok: true,
     status: r.status,
+    birthday,
     reply:
       r.status === "created"
         ? `✅ Клиент добавлен: ${clientSummary(parsed.client)}`
