@@ -335,8 +335,75 @@ app.get("/qr", checkToken, (req, res) => {
       <p>WhatsApp → Настройки → Связанные устройства → Привязать устройство</p>
       <img src="${latestQrDataUrl}" style="width:280px;height:280px" />
       <p style="color:#888;font-size:13px">Код обновляется автоматически — если не успели, просто наведите камеру ещё раз через пару секунд.</p>
+      <p>QR не сканируется? <a href="/pair?token=${encodeURIComponent(req.query.token || "")}">Привязать по коду из 8 символов</a></p>
     </body>`
   );
+});
+
+// Привязка по коду вместо QR: на телефоне «Связанные устройства →
+// Привязать устройство → Связать по номеру телефона» и ввести 8 символов.
+// Удобно, когда QR не сканируется или страницу открыть негде, кроме телефона.
+const STORE_PHONE = (process.env.STORE_PHONE || "996222904448").replace(/\D/g, "");
+
+function pairPage(token, body) {
+  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <body style="font-family:sans-serif;max-width:520px;margin:40px auto;padding:0 16px;line-height:1.5">${body}
+    <p style="margin-top:32px;color:#888;font-size:13px"><a href="/qr?token=${encodeURIComponent(token)}">Привязать по QR-коду</a></p></body>`;
+}
+
+app.get("/pair", checkToken, (req, res) => {
+  res.set("Content-Type", "text/html; charset=utf-8");
+  const token = String(req.query.token || "");
+  if (connectionStatus === "open") {
+    return res.send(pairPage(token, "<h2>Уже подключено ✅</h2><p>Бот привязан к WhatsApp, код не нужен.</p>"));
+  }
+  res.send(
+    pairPage(
+      token,
+      `<h2>Привязать бота по коду (без QR)</h2>
+      <form method="post" action="/pair?token=${encodeURIComponent(token)}">
+        <p>Номер магазина (к нему привязывается бот):</p>
+        <input name="phone" value="+${STORE_PHONE}" style="font-size:18px;padding:8px;width:100%;box-sizing:border-box">
+        <p><button style="font-size:18px;padding:12px 20px;background:#c8400e;color:#fff;border:0;border-radius:10px">Получить код</button></p>
+      </form>`
+    )
+  );
+});
+
+app.post("/pair", express.urlencoded({ extended: false }), checkToken, async (req, res) => {
+  res.set("Content-Type", "text/html; charset=utf-8");
+  const token = String(req.query.token || "");
+  if (connectionStatus === "open") {
+    return res.send(pairPage(token, "<h2>Уже подключено ✅</h2>"));
+  }
+  const phone = String(req.body?.phone || STORE_PHONE).replace(/\D/g, "");
+  // Код можно запросить только пока бот ждёт привязки (показывает QR).
+  const until = Date.now() + 20000;
+  while (connectionStatus !== "qr" && Date.now() < until) await new Promise((r) => setTimeout(r, 500));
+  if (connectionStatus !== "qr" || !sock) {
+    return res.send(pairPage(token, "<h2>Бот ещё готовится</h2><p>Обновите страницу через 10 секунд и нажмите «Получить код» ещё раз.</p>"));
+  }
+  try {
+    const code = await sock.requestPairingCode(phone);
+    const pretty = code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
+    logger.info({ phone }, "Выдан код привязки");
+    res.send(
+      pairPage(
+        token,
+        `<h2>Код привязки</h2>
+        <div style="font-size:40px;font-weight:bold;letter-spacing:4px;text-align:center;padding:16px;border:2px dashed #c8400e;border-radius:12px">${pretty}</div>
+        <ol>
+          <li>На телефоне магазина: WhatsApp → Настройки → <b>Связанные устройства</b> → <b>Привязать устройство</b>.</li>
+          <li>Внизу экрана с камерой нажмите <b>«Связать по номеру телефона»</b>.</li>
+          <li>Введите код выше. Он действует около 2 минут — если не успели, вернитесь назад и получите новый.</li>
+        </ol>
+        <p>Когда привяжется, откройте <a href="/qr?token=${encodeURIComponent(token)}">эту страницу</a> — там будет «Уже подключено ✅».</p>`
+      )
+    );
+  } catch (err) {
+    logger.error({ err: err?.message }, "Не удалось получить код привязки");
+    res.send(pairPage(token, `<h2>Не получилось</h2><p>${String(err?.message || err)}</p><p>Подождите 10 секунд и попробуйте снова.</p>`));
+  }
 });
 
 // Список групп, в которых состоит номер бота — нужен один раз, чтобы найти
