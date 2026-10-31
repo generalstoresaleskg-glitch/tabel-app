@@ -59,6 +59,10 @@ let connectionStatus = "starting"; // starting | qr | open | closed
 async function startSock() {
   const { state, saveCreds, clearAll } = await useRedisAuthState(redis, "baileys");
   const { version } = await fetchLatestBaileysVersion();
+  const LEGACY_BROWSER = ["Табель", "Chrome", "1.0"];
+  const desktopPaired = (await redis.get("baileys:browser")) === "desktop";
+  const browser = state.creds.me?.id && !desktopPaired ? LEGACY_BROWSER : Browsers.macOS("Desktop");
+  const pairingNow = !state.creds.me?.id;
 
   sock = makeWASocket({
     version,
@@ -69,9 +73,11 @@ async function startSock() {
       keys: makeCacheableSignalKeyStore(state.keys, logger),
     },
     logger,
-    // Бот представляется компьютерной версией WhatsApp: только ей телефон
-    // при привязке отдаёт полную историю переписок (браузерной — урезанную).
-    browser: Browsers.macOS("Desktop"),
+    // Новую привязку бот делает как компьютерная версия WhatsApp: только ей
+    // телефон отдаёт полную историю переписок. Но уже привязанная сессия
+    // должна входить под тем же видом устройства, под каким её привязали,
+    // иначе WhatsApp рвёт соединение сразу при входе.
+    browser,
     syncFullHistory: true,
     shouldSyncHistoryMessage: () => true,
     // Не «светиться» онлайн: иначе телефон магазина перестаёт показывать
@@ -98,6 +104,7 @@ async function startSock() {
     if (connection === "open") {
       latestQrDataUrl = null;
       connectionStatus = "open";
+      if (pairingNow) await redis.set("baileys:browser", "desktop");
       logger.info({ me: sock.user }, "WhatsApp подключён.");
       // Список чатов бота в логах — чтобы при смене общего чата сразу видеть
       // его id для WHATSAPP_GROUP_ID, не открывая /groups вручную.
@@ -120,6 +127,7 @@ async function startSock() {
       if (loggedOut) {
         logger.warn("Устройство отвязано в самом WhatsApp — сбрасываю сессию, нужен новый QR.");
         await clearAll();
+        await redis.del("baileys:browser");
       } else {
         logger.warn({ statusCode }, "Соединение с WhatsApp разорвано, переподключаюсь…");
       }
