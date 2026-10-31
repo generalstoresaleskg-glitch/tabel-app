@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { clients, users } from "@/db/schema";
 import { todayISO } from "@/lib/dates";
 import { formatBirthday, formatPhone } from "@/lib/client-parse";
+import { SEGMENT_LABEL, ensureChatSchema } from "@/lib/chats";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -13,6 +14,7 @@ export const runtime = "nodejs";
 export async function GET() {
   const session = await auth();
   if (session?.user?.role !== "owner") return new Response("Нет доступа", { status: 403 });
+  await ensureChatSchema();
 
   const rows = await db
     .select({ c: clients, userName: users.name })
@@ -30,20 +32,24 @@ export async function GET() {
     { header: "День", key: "day", width: 7 },
     { header: "Месяц", key: "month", width: 8 },
     { header: "Год", key: "year", width: 8 },
+    { header: "Сегмент", key: "segment", width: 14 },
+    { header: "Выжимка по переписке", key: "summary", width: 60 },
     { header: "Кто добавил", key: "who", width: 24 },
     { header: "Откуда", key: "source", width: 15 },
     { header: "Добавлен", key: "created", width: 12 },
   ];
   for (const { c, userName } of rows) {
     ws.addRow({
-      name: c.name,
+      name: c.name ?? "",
       phone: formatPhone(c.phone), // текстом, чтобы Excel не съел «+» и не превратил номер в число
-      birthday: formatBirthday(c.birthDay, c.birthMonth, c.birthYear),
-      day: c.birthDay,
-      month: c.birthMonth,
+      birthday: c.birthDay && c.birthMonth ? formatBirthday(c.birthDay, c.birthMonth, c.birthYear) : "",
+      day: c.birthDay ?? "",
+      month: c.birthMonth ?? "",
       year: c.birthYear ?? "",
+      segment: c.segment ? SEGMENT_LABEL[c.segment] : "",
+      summary: c.aiSummary ?? "",
       who: userName ?? c.addedByName ?? "",
-      source: c.source === "manual" ? "вручную" : "чат WhatsApp",
+      source: c.source === "manual" ? "вручную" : c.source === "ai" ? "анализ переписки" : "чат WhatsApp",
       created: c.createdAt.slice(0, 10).split("-").reverse().join("."),
     });
   }

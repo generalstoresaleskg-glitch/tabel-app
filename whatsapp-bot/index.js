@@ -15,11 +15,13 @@ import { Redis } from "ioredis";
 import pino from "pino";
 import QRCode from "qrcode";
 import makeWASocket, {
+  Browsers,
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
 } from "@whiskeysockets/baileys";
 import { useRedisAuthState } from "./redis-auth-state.js";
+import { setupChats } from "./chats.js";
 
 const PORT = process.env.PORT || 10000;
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -67,11 +69,19 @@ async function startSock() {
       keys: makeCacheableSignalKeyStore(state.keys, logger),
     },
     logger,
-    browser: ["Табель", "Chrome", "1.0"],
+    // Бот представляется компьютерной версией WhatsApp: только ей телефон
+    // при привязке отдаёт полную историю переписок (браузерной — урезанную).
+    browser: Browsers.macOS("Desktop"),
+    syncFullHistory: true,
+    shouldSyncHistoryMessage: () => true,
+    // Не «светиться» онлайн: иначе телефон магазина перестаёт показывать
+    // уведомления о новых сообщениях, пока бот подключён.
+    markOnlineOnConnect: false,
     printQRInTerminal: false,
   });
 
   sock.ev.on("creds.update", saveCreds);
+  chats.attach(sock);
   sock.ev.on("messages.upsert", (upsert) => {
     handleIncoming(upsert).catch((err) => logger.error(err, "Ошибка при обработке входящих сообщений"));
   });
@@ -120,6 +130,21 @@ async function startSock() {
   });
 }
 
+// Переписки магазина: сохранение, докачка истории и анализ — см. chats.js.
+const chats = setupChats({ getSock: () => sock, callApp, sendGroup, logger, redis });
+
+async function sendGroup(text) {
+  if (!GROUP_ID || !(await waitForOpen(30000))) {
+    logger.warn({ text }, "Не удалось написать в общий чат — WhatsApp не подключён");
+    return;
+  }
+  try {
+    await sock.sendMessage(GROUP_ID, { text });
+  } catch (err) {
+    logger.error({ err: err?.message }, "Не удалось написать в общий чат");
+  }
+}
+
 startSock().catch((err) => {
   logger.error(err, "Не удалось запустить подключение к WhatsApp.");
 });
@@ -164,11 +189,22 @@ async function callApp(path, options = {}) {
 }
 
 async function handleIncoming({ messages, type }) {
-  if (type !== "notify" || !APP_URL) return;
+  if (!APP_URL) return;
   for (const m of messages) {
     if (m.key.remoteJid !== GROUP_ID || !m.message) continue;
     const text = messageText(m.message);
-    if (!CLIENT_COMMAND_RE.test(text)) continue;
+
+    // «/анализ», «/история», «/статус» — работа с перепиской магазина.
+    const fresh = Date.now() - Number(m.messageTimestamp || 0) * 1000 < 10 * 60 * 1000;
+    if (fresh && /^\s*[\/\\]\s*(анализ|история|статус)/i.test(text)) {
+      if (await redis.set(`cmd:${m.key.id}`, "1", "EX", 3600, "NX")) {
+        const reply = await chats.handleCommand(text).catch((err) => `⚠️ ${err?.message}`);
+        if (reply) await sock.sendMessage(GROUP_ID, { text: reply }, { quoted: m });
+      }
+      continue;
+    }
+
+    if (type !== "notify" || !CLIENT_COMMAND_RE.test(text)) continue;
     // После переподключения WhatsApp досылает старые сообщения — их не трогаем,
     // иначе бот ответит на давно обработанные команды повторно.
     const ts = Number(m.messageTimestamp || 0) * 1000;
@@ -340,6 +376,51 @@ app.post("/notify", checkToken, async (req, res) => {
     logger.error(err, "Не удалось отправить сообщение в WhatsApp");
     res.status(500).json({ error: "Не удалось отправить сообщение" });
   }
+});
+
+// Перепривязка, чтобы WhatsApp заново прислал историю переписок. Табель,
+// /клиент и дни рождения после неё продолжают работать как раньше.
+app.get("/relink", checkToken, (req, res) => {
+  res.set("Content-Type", "text/html; charset=utf-8");
+  res.send(
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <body style="font-family:sans-serif;max-width:520px;margin:40px auto;padding:0 16px;line-height:1.5">
+      <h2>Перепривязать WhatsApp и забрать историю переписок</h2>
+      <p>Бот отвяжется от номера магазина и покажет новый QR-код. Отсканируйте его <b>тем же телефоном магазина</b>:
+      WhatsApp → Настройки → Связанные устройства → Привязать устройство.</p>
+      <p>Если телефон спросит про синхронизацию истории — разрешите. Табель, /клиент и дни рождения продолжат работать.</p>
+      <form method="post" action="/relink?token=${encodeURIComponent(req.query.token || "")}">
+        <button style="font-size:18px;padding:12px 20px;background:#c8400e;color:#fff;border:0;border-radius:10px">Перепривязать</button>
+      </form>
+    </body>`
+  );
+});
+
+app.post("/relink", checkToken, async (req, res) => {
+  await chats.armAutoPipeline();
+  try {
+    if (sock?.user) await sock.logout();
+  } catch (err) {
+    logger.warn({ err: err?.message }, "logout не удался — сбрасываю сессию вручную");
+    const { clearAll } = await useRedisAuthState(redis, "baileys");
+    await clearAll();
+    sock?.end?.(undefined);
+  }
+  res.redirect(303, `/qr?token=${encodeURIComponent(req.query.token || "")}`);
+});
+
+app.get("/status", checkToken, async (req, res) => {
+  res.json({ connection: connectionStatus, job: chats.job, collected: chats.stats, text: await chats.status() });
+});
+
+app.post("/analyze", checkToken, (req, res) => {
+  chats.runAnalysis().catch(() => {});
+  res.json({ started: true });
+});
+
+app.post("/backfill", checkToken, (req, res) => {
+  chats.runBackfill().catch(() => {});
+  res.json({ started: true });
 });
 
 app.listen(PORT, () => {

@@ -87,10 +87,10 @@ export async function birthdaysOn(dateISO = todayISO()) {
 //   ФИО: Иванова Айгуль
 //   Телефон: +996 700 123 456
 //   Исполняется: 31
-export function birthdayMessage(list: { name: string; phone: string; turns: number | null }[]): string | null {
+export function birthdayMessage(list: { name: string | null; phone: string; turns: number | null }[]): string | null {
   if (!list.length) return null;
   const blocks = list.map(
-    (c) => `ФИО: ${c.name}\nТелефон: ${formatPhone(c.phone)}${c.turns ? `\nИсполняется: ${c.turns}` : ""}`
+    (c) => `ФИО: ${c.name ?? "не указано"}\nТелефон: ${formatPhone(c.phone)}${c.turns ? `\nИсполняется: ${c.turns}` : ""}`
   );
   return `🎂 Сегодня день рождения!\n\n${blocks.join("\n\n")}\n\nНе забудьте поздравить!`;
 }

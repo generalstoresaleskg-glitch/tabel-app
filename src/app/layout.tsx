@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import Image from "next/image";
+import Link from "next/link";
 import "./globals.css";
 import { auth, signOut } from "@/auth";
 import { NavLink } from "@/components/nav-link";
@@ -14,6 +15,7 @@ import {
   getAssignableUsers,
 } from "@/lib/schedule-queries";
 import { buildUserColorMap, userColor } from "@/lib/user-color";
+import { clientsCount } from "@/lib/chats";
 
 export const metadata: Metadata = {
   title: "Табель — график и учёт рабочего времени",
@@ -94,6 +96,8 @@ export default async function RootLayout({
   // Тот же цвет, что и в графике (см. week-grid.tsx) — считаем по тому же
   // списку активных сотрудников, чтобы свой аватар в шапке совпадал с собой
   // же в таблице.
+  // Счётчик клиентов в шапке — только владельцу: раздел «Клиенты» закрыт от остальных.
+  const clientTotal = user?.role === "owner" ? await clientsCount().catch(() => null) : null;
   const myColor = user
     ? buildUserColorMap((await getAssignableUsers()).map((u) => u.id))[user.id] ?? userColor(user.id)
     : "";
@@ -115,6 +119,14 @@ export default async function RootLayout({
                   />
                   <span className="font-display hidden sm:inline">Табель</span>
                 </div>
+                {clientTotal !== null && (
+                  <Link
+                    href="/clients"
+                    className="rounded-full bg-brand-600/10 px-3 py-1 text-sm font-medium text-brand-700 hover:bg-brand-600/20"
+                  >
+                    Клиентов: {clientTotal.toLocaleString("ru-RU")}
+                  </Link>
+                )}
 
                 <div className="ml-auto flex items-center gap-3">
                   <ProfileMenu

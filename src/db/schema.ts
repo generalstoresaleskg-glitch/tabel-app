@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, integer, primaryKey } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // Роли: owner (владелец), manager (управляющая), employee (сотрудник, включая СММ)
@@ -183,14 +183,60 @@ export const quizAttempts = pgTable("quiz_attempts", {
 // Телефон уникален: повторное сообщение с тем же номером обновляет данные.
 export const clients = pgTable("clients", {
   id: text("id").primaryKey(),
-  name: text("name").notNull(),
+  // ФИО и день рождения необязательны: клиенты, найденные анализом переписок
+  // WhatsApp, попадают в базу по одному номеру, если имени/ДР в чате не было.
+  name: text("name"),
   phone: text("phone").notNull().unique(), // +996555123456
-  birthDay: integer("birth_day").notNull(),
-  birthMonth: integer("birth_month").notNull(),
+  birthDay: integer("birth_day"),
+  birthMonth: integer("birth_month"),
   birthYear: integer("birth_year"), // год можно не указывать
-  source: text("source", { enum: ["whatsapp", "manual"] }).notNull().default("whatsapp"),
+  source: text("source", { enum: ["whatsapp", "manual", "ai"] }).notNull().default("whatsapp"),
   addedByUserId: text("added_by_user_id").references(() => users.id, { onDelete: "set null" }),
   addedByName: text("added_by_name"), // имя/номер из WhatsApp, если сотрудник не найден по телефону
+  // Итог анализа переписки (см. src/lib/chats.ts): сегмент и короткая выжимка.
+  segment: text("segment", { enum: ["loyal", "buyer", "warm", "problem"] }),
+  aiSummary: text("ai_summary"),
+  lastChatAt: integer("last_chat_at"), // unix-секунды последнего сообщения в переписке
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+});
+
+// --- Переписки WhatsApp магазина (для анализа и будущего ИИ-помощника) -----
+
+// Все текстовые сообщения личных чатов номера магазина. chat — «+996…» или
+// «lid:…», если WhatsApp пока не раскрыл номер.
+export const waMessages = pgTable(
+  "wa_messages",
+  {
+    chat: text("chat").notNull(),
+    msgId: text("msg_id").notNull(),
+    fromMe: boolean("from_me").notNull(),
+    ts: integer("ts").notNull(),
+    text: text("text").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.chat, t.msgId] })]
+);
+
+// Один ряд на переписку: кто это, сколько сообщений и результат анализа.
+export const waChats = pgTable("wa_chats", {
+  chat: text("chat").primaryKey(),
+  jid: text("jid"), // адрес чата в WhatsApp — нужен боту, чтобы докачивать старые сообщения
+  phone: text("phone"),
+  name: text("name"), // как контакт записан в телефоне магазина или его имя в WhatsApp
+  msgCount: integer("msg_count").notNull().default(0),
+  inCount: integer("in_count").notNull().default(0), // сообщений от клиента
+  lastMsgAt: integer("last_msg_at").notNull().default(0),
+  analyzedAt: integer("analyzed_at"), // last_msg_at на момент анализа
+  attempts: integer("attempts").notNull().default(0),
+  historyDone: boolean("history_done").notNull().default(false), // старые сообщения докачаны до самого начала
+  segment: text("segment"), // loyal | buyer | warm | problem | other
+  analysis: text("analysis"), // JSON-ответ ИИ
+});
+
+// Общие отчёты по продажам и сервису (последний показывается на странице).
+export const chatReports = pgTable("chat_reports", {
+  id: text("id").primaryKey(),
+  chatsCount: integer("chats_count").notNull(),
+  body: text("body").notNull(), // JSON
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
 });
