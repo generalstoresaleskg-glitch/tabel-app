@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { clients, users } from "@/db/schema";
 import { todayISO } from "@/lib/dates";
 import { formatBirthday, formatPhone } from "@/lib/client-parse";
-import { SEGMENT_LABEL, ensureChatSchema } from "@/lib/chats";
+import { SEGMENT_LABEL, effectiveSegment, ensureChatSchema } from "@/lib/chats";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -46,7 +46,7 @@ export async function GET() {
       day: c.birthDay ?? "",
       month: c.birthMonth ?? "",
       year: c.birthYear ?? "",
-      segment: c.segment ? SEGMENT_LABEL[c.segment] : "",
+      segment: effectiveSegment(c) ? SEGMENT_LABEL[effectiveSegment(c)!] : "",
       summary: c.aiSummary ?? "",
       who: userName ?? c.addedByName ?? "",
       source: c.source === "manual" ? "вручную" : c.source === "ai" ? "анализ переписки" : "чат WhatsApp",

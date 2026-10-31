@@ -5,7 +5,15 @@ import { clients, users } from "@/db/schema";
 import { requireRole } from "@/lib/session";
 import { currentMonthStr, monthLabel, todayISO } from "@/lib/dates";
 import { formatBirthday, formatPhone } from "@/lib/client-parse";
-import { CLIENT_SEGMENTS, SEGMENT_LABEL, analysesByPhone, ensureChatSchema, type Segment } from "@/lib/chats";
+import {
+  CLIENT_SEGMENTS,
+  SEGMENT_HINT,
+  SEGMENT_LABEL,
+  analysesByPhone,
+  effectiveSegment,
+  ensureChatSchema,
+  type Segment,
+} from "@/lib/chats";
 import { AddClientForm, DeleteClientButton } from "./client-forms";
 
 type Filter = "all" | "today" | "month" | Segment;
@@ -43,7 +51,8 @@ export default async function ClientsPage({
   const [, tm, td] = today.split("-").map(Number);
   const thisMonth = currentMonthStr(); // "2026-10"
 
-  const all = rows.map(({ c, userName }) => ({ ...c, who: userName ?? c.addedByName ?? "—" }));
+  const all = rows.map(({ c, userName }) => ({ ...c, segment: effectiveSegment(c), who: userName ?? c.addedByName ?? "—" }));
+  const byStaff = all.filter((c) => c.source !== "ai").length;
   const qDigits = q.replace(/\D/g, "");
   const list = all.filter((c) => {
     if (filter === "today" && !(c.birthMonth === tm && c.birthDay === td)) return false;
@@ -91,9 +100,9 @@ export default async function ClientsPage({
         <div>
           <h1 className="page-title">Клиенты</h1>
           <p className="page-subtitle">
-            Всего в базе: {all.length}. Сотрудники добавляют клиентов в общем чате командой{" "}
-            <code className="rounded bg-slate-100 px-1">/клиент ФИО телефон дата рождения</code>, остальных находит
-            анализ переписок (команда <code className="rounded bg-slate-100 px-1">/анализ</code> в том же чате).
+            Всего в базе: <b>{all.length}</b> — завели продавцы: {byStaff}, найдено в переписках WhatsApp:{" "}
+            {all.length - byStaff}. Продавцы добавляют клиентов в общем чате командой{" "}
+            <code className="rounded bg-slate-100 px-1">/клиент ФИО телефон дата рождения</code>.
           </p>
         </div>
         <div className="flex gap-2">
@@ -109,8 +118,9 @@ export default async function ClientsPage({
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {CLIENT_SEGMENTS.map((s) => (
           <Link key={s} href={`/clients?f=${s}`} className="card-pad block hover:bg-slate-50">
-            <div className="text-sm text-slate-500">{SEGMENT_LABEL[s]}</div>
+            <div className="text-sm font-medium text-slate-700">{SEGMENT_LABEL[s]}</div>
             <div className="mt-1 text-2xl font-semibold">{segmentCounts[s]}</div>
+            <div className="mt-1 text-xs leading-snug text-slate-500">{SEGMENT_HINT[s]}</div>
           </Link>
         ))}
       </div>

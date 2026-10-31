@@ -528,7 +528,7 @@ export function setupChats({ getSock, callApp, sendGroup, logger, redis }) {
           "✅ Анализ переписок завершён",
           `Разобрано переписок: ${totals.done - totals.failed}${totals.failed ? ` (с ошибкой: ${totals.failed}, повторю при следующем /анализ)` : ""}`,
           `В базу клиентов: новых ${totals.created}, обновлено ${totals.updated}`,
-          `Лояльные: ${c.loyal ?? 0} · Покупатели: ${c.buyer ?? 0} · Тёплые: ${c.warm ?? 0} · Проблемные: ${c.problem ?? 0}`,
+          `Постоянные: ${c.loyal ?? 0} · Купили: ${c.buyer ?? 0} · Интересовались: ${c.warm ?? 0} · С жалобой: ${c.problem ?? 0}`,
           clientsTotal != null ? `Всего клиентов в базе: ${clientsTotal}` : null,
           report ? "Подробный разбор продаж и сервиса — в табеле: Клиенты → Анализ продаж." : "Общий отчёт построить не удалось, клиенты сохранены.",
         ]

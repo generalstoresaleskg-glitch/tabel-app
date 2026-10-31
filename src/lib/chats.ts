@@ -13,11 +13,23 @@ import { normalizePhone } from "@/lib/client-parse";
 export type Segment = "loyal" | "buyer" | "warm" | "problem";
 export const CLIENT_SEGMENTS: Segment[] = ["loyal", "buyer", "warm", "problem"];
 export const SEGMENT_LABEL: Record<Segment, string> = {
-  loyal: "Лояльный",
-  buyer: "Покупатель",
-  warm: "Тёплый",
-  problem: "Проблемный",
+  loyal: "Постоянные",
+  buyer: "Купили",
+  warm: "Интересовались",
+  problem: "С жалобой",
 };
+export const SEGMENT_HINT: Record<Segment, string> = {
+  loyal: "Покупали не раз или благодарили — ядро для бонусов и приглашений",
+  buyer: "Покупка была. Сюда же все, кого завели продавцы через /клиент",
+  warm: "Спрашивали цену или наличие, но покупки не видно — их можно дожать",
+  problem: "Было недовольство или жалоба — стоит связаться и исправить",
+};
+
+// Клиенты, которых завели продавцы (/клиент или вручную), — покупатели по
+// определению, даже если анализ переписки их ещё не видел.
+export function effectiveSegment(c: { segment: Segment | null; source: string }): Segment | null {
+  return c.segment ?? (c.source === "ai" ? null : "buyer");
+}
 
 // --- Схема ------------------------------------------------------------------
 //
@@ -276,10 +288,13 @@ export async function saveAnalysis(input: { chat: string; phone?: string | null;
 
   const [existing] = await db.select().from(clients).where(eq(clients.phone, phone));
   if (existing) {
+    // Кого завели продавцы, тот покупал в магазине: «интересовались» по
+    // переписке не понижает их ниже «купили».
+    const finalSeg: Segment = existing.source !== "ai" && seg === "warm" ? "buyer" : seg;
     await db
       .update(clients)
       .set({
-        segment: seg,
+        segment: finalSeg,
         aiSummary: summary,
         lastChatAt: chat.lastMsgAt,
         // Что сотрудники уже вписали вручную, не перетираем — только заполняем пустое.
@@ -288,7 +303,7 @@ export async function saveAnalysis(input: { chat: string; phone?: string | null;
         updatedAt: now,
       })
       .where(eq(clients.id, existing.id));
-    return { status: "updated" as const, segment: seg };
+    return { status: "updated" as const, segment: finalSeg };
   }
   await db.insert(clients).values({
     id: randomUUID(),
