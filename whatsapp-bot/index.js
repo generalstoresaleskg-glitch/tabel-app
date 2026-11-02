@@ -53,7 +53,17 @@ const redis = new Redis(REDIS_URL);
 
 let sock = null;
 let latestQrDataUrl = null;
-let connectionStatus = "starting"; // starting | qr | open | closed
+let connectionStatus = "starting"; // starting | qr | open | closed | idle
+// Пока бот не привязан, он НЕ стучится в WhatsApp сам по себе: раньше он
+// круглосуточно каждые ~2,5 минуты открывал новую попытку привязки (сотни в
+// день), и WhatsApp из-за этого закрывает номеру привязку новых устройств
+// («Сейчас невозможно связать новые устройства»). Теперь попытки идут только
+// 10 минут после того, как кто-то открыл /qr или /pair.
+let linkWantedUntil = 0;
+const LINK_WINDOW_MS = 10 * 60 * 1000;
+// Подряд неудачные переподключения уже привязанного бота — растущая пауза
+// (3 с → 6 с → … → 5 мин), чтобы не долбить WhatsApp каждые 3 секунды.
+let failures = 0;
 // Режим привязки по коду: пока он включён, сокет держит одну попытку привязки
 // долго (а не рвёт её через ~2 минуты, как при QR), иначе 8-значный код
 // «умирает» раньше, чем его успевают ввести на телефоне.
@@ -71,6 +81,12 @@ async function startSock() {
     logger.warn("Незавершённая привязка — сбрасываю её и начинаю заново.");
     await clearAll();
     ({ state, saveCreds, clearAll } = await useRedisAuthState(redis, "baileys"));
+  }
+  if (!state.creds.account && Date.now() > linkWantedUntil && !isPairing()) {
+    connectionStatus = "idle";
+    latestQrDataUrl = null;
+    logger.info("Бот не привязан — жду, пока откроют /qr или /pair (сам в WhatsApp не стучусь).");
+    return;
   }
   const { version } = await fetchLatestBaileysVersion();
   // Вид устройства — тот же, под каким бот привязан с самого начала.
@@ -117,6 +133,8 @@ async function startSock() {
 
     if (connection === "open") {
       pairingUntil = 0;
+      linkWantedUntil = 0;
+      failures = 0;
       latestQrDataUrl = null;
       connectionStatus = "open";
       logger.info({ me: sock.user }, "WhatsApp подключён.");
@@ -144,15 +162,30 @@ async function startSock() {
       } else {
         logger.warn({ statusCode }, "Соединение с WhatsApp разорвано, переподключаюсь…");
       }
-      // Не переподключаемся мгновенно в цикле — небольшая пауза бережёт от
-      // спама попытками, если проблема не сиюминутная.
-      setTimeout(startSock, 3000);
+      // Привязка в процессе (или WhatsApp просит перезапуск после привязки) —
+      // быстро. Уже привязанный бот при повторных сбоях ждёт всё дольше.
+      const paired = !!state.creds.account && !loggedOut;
+      let delay = 3000;
+      if (paired && statusCode !== DisconnectReason.restartRequired) {
+        failures++;
+        delay = Math.min(3000 * 2 ** Math.min(failures - 1, 7), 5 * 60 * 1000);
+      }
+      setTimeout(() => startSock().catch((err) => logger.error(err, "Не удалось переподключиться")), delay);
     }
   });
 }
 
 // Переписки магазина: сохранение, докачка истории и анализ — см. chats.js.
 const chats = setupChats({ getSock: () => sock, callApp, sendGroup, logger, redis });
+
+// Кто-то открыл /qr или /pair — бот начинает попытки привязки на 10 минут.
+function wantLink() {
+  linkWantedUntil = Date.now() + LINK_WINDOW_MS;
+  if (connectionStatus === "idle") {
+    connectionStatus = "starting";
+    startSock().catch((err) => logger.error(err, "Не удалось запустить подключение к WhatsApp."));
+  }
+}
 
 async function sendGroup(text) {
   if (!GROUP_ID || !(await waitForOpen(30000))) {
@@ -326,6 +359,7 @@ app.get("/health", (req, res) => {
 // не смог перехватить привязку во время настройки.
 app.get("/qr", checkToken, (req, res) => {
   res.set("Content-Type", "text/html; charset=utf-8");
+  if (connectionStatus !== "open") wantLink();
   if (connectionStatus === "open") {
     return res.send(
       `<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;text-align:center;padding:40px">
@@ -399,8 +433,14 @@ app.post("/pair", express.urlencoded({ extended: false }), checkToken, async (re
   // Перезапускаем подключение в режиме кода: новый сокет не будет рваться
   // каждые ~2 минуты, и выданный код проживёт, пока его вводят на телефоне.
   pairingUntil = Date.now() + PAIRING_WINDOW_MS;
-  connectionStatus = "starting";
-  sock?.end?.(new Boom("Перезапуск для привязки по коду", { statusCode: DisconnectReason.restartRequired }));
+  linkWantedUntil = pairingUntil;
+  if (connectionStatus === "idle") {
+    connectionStatus = "starting";
+    startSock().catch((err) => logger.error(err, "Не удалось запустить подключение к WhatsApp."));
+  } else {
+    connectionStatus = "starting";
+    sock?.end?.(new Boom("Перезапуск для привязки по коду", { statusCode: DisconnectReason.restartRequired }));
+  }
   const until = Date.now() + 30000;
   while (connectionStatus !== "qr" && Date.now() < until) await new Promise((r) => setTimeout(r, 500));
   if (connectionStatus !== "qr" || !sock) {
