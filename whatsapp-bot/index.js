@@ -54,9 +54,24 @@ const redis = new Redis(REDIS_URL);
 let sock = null;
 let latestQrDataUrl = null;
 let connectionStatus = "starting"; // starting | qr | open | closed
+// Режим привязки по коду: пока он включён, сокет держит одну попытку привязки
+// долго (а не рвёт её через ~2 минуты, как при QR), иначе 8-значный код
+// «умирает» раньше, чем его успевают ввести на телефоне.
+let pairingUntil = 0;
+const PAIRING_WINDOW_MS = 10 * 60 * 1000;
+const isPairing = () => Date.now() < pairingUntil;
 
 async function startSock() {
-  const { state, saveCreds, clearAll } = await useRedisAuthState(redis, "baileys");
+  let { state, saveCreds, clearAll } = await useRedisAuthState(redis, "baileys");
+  // Полупривязанная сессия: код запрашивали (Baileys уже записал номер в
+  // creds.me), но привязка не завершилась (нет creds.account). С такой сессией
+  // Baileys пытается «войти» вместо новой привязки, WhatsApp отвечает отказом —
+  // и любой код сразу недействителен. Начинаем с чистого листа.
+  if (state.creds.me && !state.creds.account) {
+    logger.warn("Незавершённая привязка — сбрасываю её и начинаю заново.");
+    await clearAll();
+    ({ state, saveCreds, clearAll } = await useRedisAuthState(redis, "baileys"));
+  }
   const { version } = await fetchLatestBaileysVersion();
   // Вид устройства — тот же, под каким бот привязан с самого начала.
   // «Компьютер Mac» (Browsers.macOS) WhatsApp сейчас не принимает: и вход, и
@@ -80,6 +95,9 @@ async function startSock() {
     // уведомления о новых сообщениях, пока бот подключён.
     markOnlineOnConnect: false,
     printQRInTerminal: false,
+    // В режиме кода одна попытка привязки живёт 3 минуты на каждый шаг
+    // (несколько шагов подряд), вместо стандартных 60/20 секунд для QR.
+    ...(isPairing() ? { qrTimeout: 3 * 60 * 1000 } : {}),
   });
 
   sock.ev.on("creds.update", saveCreds);
@@ -98,6 +116,7 @@ async function startSock() {
     }
 
     if (connection === "open") {
+      pairingUntil = 0;
       latestQrDataUrl = null;
       connectionStatus = "open";
       logger.info({ me: sock.user }, "WhatsApp подключён.");
@@ -377,8 +396,12 @@ app.post("/pair", express.urlencoded({ extended: false }), checkToken, async (re
     return res.send(pairPage(token, "<h2>Уже подключено ✅</h2>"));
   }
   const phone = String(req.body?.phone || STORE_PHONE).replace(/\D/g, "");
-  // Код можно запросить только пока бот ждёт привязки (показывает QR).
-  const until = Date.now() + 20000;
+  // Перезапускаем подключение в режиме кода: новый сокет не будет рваться
+  // каждые ~2 минуты, и выданный код проживёт, пока его вводят на телефоне.
+  pairingUntil = Date.now() + PAIRING_WINDOW_MS;
+  connectionStatus = "starting";
+  sock?.end?.(new Boom("Перезапуск для привязки по коду", { statusCode: DisconnectReason.restartRequired }));
+  const until = Date.now() + 30000;
   while (connectionStatus !== "qr" && Date.now() < until) await new Promise((r) => setTimeout(r, 500));
   if (connectionStatus !== "qr" || !sock) {
     return res.send(pairPage(token, "<h2>Бот ещё готовится</h2><p>Обновите страницу через 10 секунд и нажмите «Получить код» ещё раз.</p>"));
@@ -395,7 +418,8 @@ app.post("/pair", express.urlencoded({ extended: false }), checkToken, async (re
         <ol>
           <li>На телефоне магазина: WhatsApp → Настройки → <b>Связанные устройства</b> → <b>Привязать устройство</b>.</li>
           <li>Внизу экрана с камерой нажмите <b>«Связать по номеру телефона»</b>.</li>
-          <li>Введите код выше. Он действует около 2 минут — если не успели, вернитесь назад и получите новый.</li>
+          <li>Введите код выше. Он действует несколько минут — если не успели, вернитесь назад и получите новый.</li>
+          <li>Не нажимайте «Получить код» повторно, пока вводите этот — новый запрос отменяет старый код.</li>
         </ol>
         <p>Когда привяжется, откройте <a href="/qr?token=${encodeURIComponent(token)}">эту страницу</a> — там будет «Уже подключено ✅».</p>`
       )
