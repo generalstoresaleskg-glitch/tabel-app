@@ -26,6 +26,13 @@ const PORT = process.env.PORT || 10000;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const GROUP_ID = process.env.WHATSAPP_GROUP_ID || "";
 const REDIS_URL = process.env.REDIS_URL;
+// Анализ переписок (скачивание истории всех чатов + DeepSeek). Включается
+// только явно: CHAT_ANALYSIS=on. Бот на личном номере владельца шлёт только
+// уведомления, /клиент и дни рождения — и не трогает его личные переписки.
+const CHAT_ANALYSIS = process.env.CHAT_ANALYSIS === "on";
+// Свой ключ сессии в Redis для каждого бота — чтобы второй бот (на номере
+// магазина) мог жить в той же базе, не затирая первого.
+const SESSION_PREFIX = process.env.SESSION_PREFIX || "baileys";
 // Render сам подставляет публичный адрес сервиса. По нему бот раз в 10 минут
 // стучится сам к себе: бесплатный тариф усыпляет сервис после ~15 минут без
 // входящих запросов, а спящий бот просыпается до минуты — за это время
@@ -72,7 +79,7 @@ const PAIRING_WINDOW_MS = 10 * 60 * 1000;
 const isPairing = () => Date.now() < pairingUntil;
 
 async function startSock() {
-  let { state, saveCreds, clearAll } = await useRedisAuthState(redis, "baileys");
+  let { state, saveCreds, clearAll } = await useRedisAuthState(redis, SESSION_PREFIX);
   // Полупривязанная сессия: код запрашивали (Baileys уже записал номер в
   // creds.me), но привязка не завершилась (нет creds.account). С такой сессией
   // Baileys пытается «войти» вместо новой привязки, WhatsApp отвечает отказом —
@@ -80,7 +87,7 @@ async function startSock() {
   if (state.creds.me && !state.creds.account) {
     logger.warn("Незавершённая привязка — сбрасываю её и начинаю заново.");
     await clearAll();
-    ({ state, saveCreds, clearAll } = await useRedisAuthState(redis, "baileys"));
+    ({ state, saveCreds, clearAll } = await useRedisAuthState(redis, SESSION_PREFIX));
   }
   if (!state.creds.account && Date.now() > linkWantedUntil && !isPairing()) {
     connectionStatus = "idle";
@@ -105,8 +112,8 @@ async function startSock() {
     },
     logger,
     browser,
-    syncFullHistory: true,
-    shouldSyncHistoryMessage: () => true,
+    syncFullHistory: CHAT_ANALYSIS,
+    shouldSyncHistoryMessage: () => CHAT_ANALYSIS,
     // Не «светиться» онлайн: иначе телефон магазина перестаёт показывать
     // уведомления о новых сообщениях, пока бот подключён.
     markOnlineOnConnect: false,
@@ -117,7 +124,7 @@ async function startSock() {
   });
 
   sock.ev.on("creds.update", saveCreds);
-  chats.attach(sock);
+  if (CHAT_ANALYSIS) chats.attach(sock);
   sock.ev.on("messages.upsert", (upsert) => {
     handleIncoming(upsert).catch((err) => logger.error(err, "Ошибка при обработке входящих сообщений"));
   });
@@ -176,7 +183,7 @@ async function startSock() {
 }
 
 // Переписки магазина: сохранение, докачка истории и анализ — см. chats.js.
-const chats = setupChats({ getSock: () => sock, callApp, sendGroup, logger, redis });
+const chats = setupChats({ getSock: () => sock, callApp, sendGroup, logger, redis, enabled: CHAT_ANALYSIS });
 
 // Кто-то открыл /qr или /pair — бот начинает попытки привязки на 10 минут.
 function wantLink() {
@@ -250,7 +257,7 @@ async function handleIncoming({ messages, type }) {
 
     // «/анализ», «/история», «/статус» — работа с перепиской магазина.
     const fresh = Date.now() - Number(m.messageTimestamp || 0) * 1000 < 10 * 60 * 1000;
-    if (fresh && /^\s*[\/\\]\s*(анализ|история|статус)/i.test(text)) {
+    if (CHAT_ANALYSIS && fresh && /^\s*[\/\\]\s*(анализ|история|статус)/i.test(text)) {
       if (await redis.set(`cmd:${m.key.id}`, "1", "EX", 3600, "NX")) {
         const reply = await chats.handleCommand(text).catch((err) => `⚠️ ${err?.message}`);
         if (reply) await sock.sendMessage(GROUP_ID, { text: reply }, { quoted: m });
@@ -396,7 +403,7 @@ app.get("/qr", checkToken, (req, res) => {
 // Привязка по коду вместо QR: на телефоне «Связанные устройства →
 // Привязать устройство → Связать по номеру телефона» и ввести 8 символов.
 // Удобно, когда QR не сканируется или страницу открыть негде, кроме телефона.
-const STORE_PHONE = (process.env.STORE_PHONE || "996222904448").replace(/\D/g, "");
+const STORE_PHONE = (process.env.BOT_PHONE || process.env.STORE_PHONE || "996222904448").replace(/\D/g, "");
 
 function pairPage(token, body) {
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -415,7 +422,7 @@ app.get("/pair", checkToken, (req, res) => {
       token,
       `<h2>Привязать бота по коду (без QR)</h2>
       <form method="post" action="/pair?token=${encodeURIComponent(token)}">
-        <p>Номер магазина (к нему привязывается бот):</p>
+        <p>Номер WhatsApp, к которому привязывается бот:</p>
         <input name="phone" value="+${STORE_PHONE}" style="font-size:18px;padding:8px;width:100%;box-sizing:border-box">
         <p><button style="font-size:18px;padding:12px 20px;background:#c8400e;color:#fff;border:0;border-radius:10px">Получить код</button></p>
       </form>`
@@ -456,7 +463,7 @@ app.post("/pair", express.urlencoded({ extended: false }), checkToken, async (re
         `<h2>Код привязки</h2>
         <div style="font-size:40px;font-weight:bold;letter-spacing:4px;text-align:center;padding:16px;border:2px dashed #c8400e;border-radius:12px">${pretty}</div>
         <ol>
-          <li>На телефоне магазина: WhatsApp → Настройки → <b>Связанные устройства</b> → <b>Привязать устройство</b>.</li>
+          <li>На телефоне с этим номером: WhatsApp → Настройки → <b>Связанные устройства</b> → <b>Привязать устройство</b>.</li>
           <li>Внизу экрана с камерой нажмите <b>«Связать по номеру телефона»</b>.</li>
           <li>Введите код выше. Он действует несколько минут — если не успели, вернитесь назад и получите новый.</li>
           <li>Не нажимайте «Получить код» повторно, пока вводите этот — новый запрос отменяет старый код.</li>
@@ -530,12 +537,12 @@ app.get("/relink", checkToken, (req, res) => {
 });
 
 app.post("/relink", checkToken, async (req, res) => {
-  await chats.armAutoPipeline();
+  if (CHAT_ANALYSIS) await chats.armAutoPipeline();
   try {
     if (sock?.user) await sock.logout();
   } catch (err) {
     logger.warn({ err: err?.message }, "logout не удался — сбрасываю сессию вручную");
-    const { clearAll } = await useRedisAuthState(redis, "baileys");
+    const { clearAll } = await useRedisAuthState(redis, SESSION_PREFIX);
     await clearAll();
     sock?.end?.(undefined);
   }
@@ -547,11 +554,13 @@ app.get("/status", checkToken, async (req, res) => {
 });
 
 app.post("/analyze", checkToken, (req, res) => {
+  if (!CHAT_ANALYSIS) return res.status(409).json({ error: "Анализ переписок на этом боте выключен (CHAT_ANALYSIS)" });
   chats.runAnalysis().catch(() => {});
   res.json({ started: true });
 });
 
 app.post("/backfill", checkToken, (req, res) => {
+  if (!CHAT_ANALYSIS) return res.status(409).json({ error: "Анализ переписок на этом боте выключен (CHAT_ANALYSIS)" });
   chats.runBackfill().catch(() => {});
   res.json({ started: true });
 });

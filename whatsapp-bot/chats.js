@@ -24,7 +24,7 @@ const BACKFILL_WAIT_MS = 45_000; // сколько ждать ответа те�
 const QUIET_MS = 5 * 60 * 1000; // история «докачалась», если 5 минут не было новых порций
 const ANALYZE_CONCURRENCY = 4;
 
-export function setupChats({ getSock, callApp, sendGroup, logger, redis }) {
+export function setupChats({ getSock, callApp, sendGroup, logger, redis, enabled = true }) {
   // --- Адреса чатов -------------------------------------------------------
 
   const lidToPn = new Map(); // «123456789» (lid) → «996555123456»
@@ -566,7 +566,7 @@ export function setupChats({ getSock, callApp, sendGroup, logger, redis }) {
   const startedAt = Date.now();
   setInterval(async () => {
     try {
-      if (job.backfill || job.analysis) return;
+      if (!enabled || job.backfill || job.analysis) return;
       if (!(await redis.get(AUTO_KEY))) return;
       // После перезапуска бота отсчёт тишины — от момента запуска.
       if (Date.now() - (stats.lastChunkAt || startedAt) < QUIET_MS) return;
