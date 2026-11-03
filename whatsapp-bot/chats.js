@@ -278,12 +278,27 @@ export function setupChats({ getSock, callApp, sendGroup, logger, redis, enabled
     job.backfill = true;
     let processed = 0;
     let stalled = 0;
+    let passes = 0;
     const skip = new Set();
     try {
       while (true) {
-        const q = await callApp("/api/chats/backfill?limit=20");
+        const q = await callApp("/api/chats/backfill?limit=100");
         const list = (q.chats ?? []).filter((c) => !skip.has(c.chat));
-        if (!list.length) break;
+        if (!list.length) {
+          if (!(q.chats ?? []).length) break; // очередь действительно пуста
+          // Остались только переписки, по которым телефон не ответил. Раньше
+          // здесь докачка ошибочно считалась завершённой (59 из ~660). Теперь —
+          // пауза и ещё до трёх проходов.
+          if (++passes > 3) {
+            logger.warn({ processed, remaining: q.remaining }, "Докачка остановлена: телефон не отдаёт старые сообщения");
+            break;
+          }
+          await sendGroup(`⏸ Докачка истории: телефон магазина не отдал старые сообщения по ${skip.size} перепискам (осталось ${q.remaining}). Держите WhatsApp открытым на телефоне — повторю через 15 минут.`);
+          await new Promise((r) => setTimeout(r, 15 * 60 * 1000));
+          skip.clear();
+          stalled = 0;
+          continue;
+        }
         for (const c of list) {
           job.progress = `докачка истории: осталось ${q.remaining} переписок`;
           try {

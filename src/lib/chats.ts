@@ -429,7 +429,9 @@ export async function backfillQueue(limit: number) {
 
 export async function markHistoryDone(chat: string) {
   await ensureChatSchema();
-  await db.update(waChats).set({ historyDone: true }).where(eq(waChats.chat, chat));
+  // Докачанная старая история меняет картину по клиенту — переписку разберём
+  // заново при следующем анализе (иначе она считалась бы уже разобранной).
+  await db.update(waChats).set({ historyDone: true, analyzedAt: null }).where(eq(waChats.chat, chat));
 }
 
 export async function chatStats() {
