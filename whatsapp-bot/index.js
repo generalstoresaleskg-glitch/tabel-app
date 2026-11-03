@@ -33,6 +33,15 @@ const CHAT_ANALYSIS = process.env.CHAT_ANALYSIS === "on";
 // Свой ключ сессии в Redis для каждого бота — чтобы второй бот (на номере
 // магазина) мог жить в той же базе, не затирая первого.
 const SESSION_PREFIX = process.env.SESSION_PREFIX || "baileys";
+// Роль процесса. main — бот на номере владельца: уведомления, /клиент, дни
+// рождения. store — второй бот на номере магазина: только сбор переписок и
+// анализ клиентов (его страницы открываются по адресу /store/qr, /store/pair).
+const ROLE = process.env.BOT_ROLE === "store" ? "store" : "main";
+const IS_MAIN = ROLE === "main";
+// Префикс адресов страниц, если процесс стоит за прокси (у второго бота — /store).
+const BASE = (process.env.BASE_PATH || "").replace(/\/$/, "");
+// Внутренний порт второго бота (на него главный процесс проксирует /store/*).
+const STORE_PORT = Number(process.env.STORE_PORT || 10001);
 // Render сам подставляет публичный адрес сервиса. По нему бот раз в 10 минут
 // стучится сам к себе: бесплатный тариф усыпляет сервис после ~15 минут без
 // входящих запросов, а спящий бот просыпается до минуты — за это время
@@ -55,7 +64,7 @@ if (!REDIS_URL) {
   process.exit(1);
 }
 
-const logger = pino({ level: process.env.LOG_LEVEL || "info" });
+const logger = pino({ level: process.env.LOG_LEVEL || "info" }).child({ bot: ROLE });
 const redis = new Redis(REDIS_URL);
 
 let sock = null;
@@ -188,6 +197,8 @@ const chats = setupChats({ getSock: () => sock, callApp, sendGroup, logger, redi
 // Кто-то открыл /qr или /pair — бот начинает попытки привязки на 10 минут.
 function wantLink() {
   linkWantedUntil = Date.now() + LINK_WINDOW_MS;
+  // Бот магазина после привязки сам запускает докачку истории и анализ.
+  if (CHAT_ANALYSIS) chats.armAutoPipeline().catch(() => {});
   if (connectionStatus === "idle") {
     connectionStatus = "starting";
     startSock().catch((err) => logger.error(err, "Не удалось запустить подключение к WhatsApp."));
@@ -265,7 +276,7 @@ async function handleIncoming({ messages, type }) {
       continue;
     }
 
-    if (type !== "notify" || !CLIENT_COMMAND_RE.test(text)) continue;
+    if (!IS_MAIN || type !== "notify" || !CLIENT_COMMAND_RE.test(text)) continue;
     // После переподключения WhatsApp досылает старые сообщения — их не трогаем,
     // иначе бот ответит на давно обработанные команды повторно.
     const ts = Number(m.messageTimestamp || 0) * 1000;
@@ -333,13 +344,44 @@ async function birthdayCheck() {
   logger.info({ count: r.count }, "Проверка дней рождения выполнена");
 }
 
-setInterval(() => {
+if (IS_MAIN) setInterval(() => {
   birthdayCheck().catch((err) => logger.error({ err: err?.message }, "Проверка дней рождения не удалась — повторю через 5 минут"));
 }, 5 * 60 * 1000);
 
 // --- HTTP-сервер -----------------------------------------------------------
 
 const app = express();
+
+// Главный процесс пропускает /store/* во второй бот (номер магазина), который
+// слушает только внутренний порт. Тело передаём как есть.
+if (IS_MAIN) {
+  app.use("/store", express.raw({ type: "*/*", limit: "5mb" }), async (req, res) => {
+    try {
+      const headers = {};
+      for (const h of ["content-type", "authorization"]) if (req.headers[h]) headers[h] = req.headers[h];
+      const hasBody = !["GET", "HEAD"].includes(req.method) && Buffer.isBuffer(req.body) && req.body.length;
+      const r = await fetch(`http://127.0.0.1:${STORE_PORT}${req.url}`, {
+        method: req.method,
+        headers,
+        body: hasBody ? req.body : undefined,
+        redirect: "manual",
+        signal: AbortSignal.timeout(60000),
+      });
+      res.status(r.status);
+      for (const h of ["content-type", "location"]) {
+        const v = r.headers.get(h);
+        if (v) res.set(h, v);
+      }
+      res.send(Buffer.from(await r.arrayBuffer()));
+    } catch (err) {
+      res
+        .status(502)
+        .set("Content-Type", "text/html; charset=utf-8")
+        .send("<h2>Бот магазина ещё запускается</h2><p>Обновите страницу через 20 секунд.</p>");
+    }
+  });
+}
+
 app.use(express.json());
 
 function checkToken(req, res, next) {
@@ -395,7 +437,7 @@ app.get("/qr", checkToken, (req, res) => {
       <p>WhatsApp → Настройки → Связанные устройства → Привязать устройство</p>
       <img src="${latestQrDataUrl}" style="width:280px;height:280px" />
       <p style="color:#888;font-size:13px">Код обновляется автоматически — если не успели, просто наведите камеру ещё раз через пару секунд.</p>
-      <p>QR не сканируется? <a href="/pair?token=${encodeURIComponent(req.query.token || "")}">Привязать по коду из 8 символов</a></p>
+      <p>QR не сканируется? <a href="${BASE}/pair?token=${encodeURIComponent(req.query.token || "")}">Привязать по коду из 8 символов</a></p>
     </body>`
   );
 });
@@ -408,7 +450,7 @@ const STORE_PHONE = (process.env.BOT_PHONE || process.env.STORE_PHONE || "996222
 function pairPage(token, body) {
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <body style="font-family:sans-serif;max-width:520px;margin:40px auto;padding:0 16px;line-height:1.5">${body}
-    <p style="margin-top:32px;color:#888;font-size:13px"><a href="/qr?token=${encodeURIComponent(token)}">Привязать по QR-коду</a></p></body>`;
+    <p style="margin-top:32px;color:#888;font-size:13px"><a href="${BASE}/qr?token=${encodeURIComponent(token)}">Привязать по QR-коду</a></p></body>`;
 }
 
 app.get("/pair", checkToken, (req, res) => {
@@ -421,7 +463,7 @@ app.get("/pair", checkToken, (req, res) => {
     pairPage(
       token,
       `<h2>Привязать бота по коду (без QR)</h2>
-      <form method="post" action="/pair?token=${encodeURIComponent(token)}">
+      <form method="post" action="${BASE}/pair?token=${encodeURIComponent(token)}">
         <p>Номер WhatsApp, к которому привязывается бот:</p>
         <input name="phone" value="+${STORE_PHONE}" style="font-size:18px;padding:8px;width:100%;box-sizing:border-box">
         <p><button style="font-size:18px;padding:12px 20px;background:#c8400e;color:#fff;border:0;border-radius:10px">Получить код</button></p>
@@ -468,7 +510,7 @@ app.post("/pair", express.urlencoded({ extended: false }), checkToken, async (re
           <li>Введите код выше. Он действует несколько минут — если не успели, вернитесь назад и получите новый.</li>
           <li>Не нажимайте «Получить код» повторно, пока вводите этот — новый запрос отменяет старый код.</li>
         </ol>
-        <p>Когда привяжется, откройте <a href="/qr?token=${encodeURIComponent(token)}">эту страницу</a> — там будет «Уже подключено ✅».</p>`
+        <p>Когда привяжется, откройте <a href="${BASE}/qr?token=${encodeURIComponent(token)}">эту страницу</a> — там будет «Уже подключено ✅».</p>`
       )
     );
   } catch (err) {
@@ -529,7 +571,7 @@ app.get("/relink", checkToken, (req, res) => {
       <p>Бот отвяжется от номера магазина и покажет новый QR-код. Отсканируйте его <b>тем же телефоном магазина</b>:
       WhatsApp → Настройки → Связанные устройства → Привязать устройство.</p>
       <p>Если телефон спросит про синхронизацию истории — разрешите. Табель, /клиент и дни рождения продолжат работать.</p>
-      <form method="post" action="/relink?token=${encodeURIComponent(req.query.token || "")}">
+      <form method="post" action="${BASE}/relink?token=${encodeURIComponent(req.query.token || "")}">
         <button style="font-size:18px;padding:12px 20px;background:#c8400e;color:#fff;border:0;border-radius:10px">Перепривязать</button>
       </form>
     </body>`
@@ -546,7 +588,7 @@ app.post("/relink", checkToken, async (req, res) => {
     await clearAll();
     sock?.end?.(undefined);
   }
-  res.redirect(303, `/qr?token=${encodeURIComponent(req.query.token || "")}`);
+  res.redirect(303, `${BASE}/qr?token=${encodeURIComponent(req.query.token || "")}`);
 });
 
 app.get("/status", checkToken, async (req, res) => {
@@ -565,11 +607,11 @@ app.post("/backfill", checkToken, (req, res) => {
   res.json({ started: true });
 });
 
-app.listen(PORT, () => {
-  logger.info(`HTTP-сервер бота слушает порт ${PORT}`);
+app.listen(IS_MAIN ? PORT : STORE_PORT, IS_MAIN ? undefined : "127.0.0.1", () => {
+  logger.info(`HTTP-сервер бота (${ROLE}) слушает порт ${IS_MAIN ? PORT : STORE_PORT}`);
 });
 
-if (SELF_URL) {
+if (SELF_URL && IS_MAIN) {
   setInterval(() => {
     fetch(`${SELF_URL}/health`, { signal: AbortSignal.timeout(30000) }).catch((err) =>
       logger.warn({ err: err?.message }, "Самопинг не прошёл — попробую через 10 минут")
