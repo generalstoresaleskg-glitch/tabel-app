@@ -442,6 +442,12 @@ export async function chatStats() {
       (select count(*)::int from wa_messages) as messages,
       (select min(ts)::int from wa_messages) as oldest_ts,
       (select count(*)::int from wa_chats where not history_done and jid is not null and msg_count > 0) as backfill_left,
-      (select count(*)::int from clients) as clients`);
-  return r.rows[0] as Record<string, number | null>;
+      (select count(*)::int from clients) as clients,
+      (select count(*)::int from wa_chats where analyzed_at is not null and segment is distinct from 'staff') as analyzed,
+      (select count(*)::int from wa_chats where segment = 'loyal') as seg_loyal,
+      (select count(*)::int from wa_chats where segment = 'buyer') as seg_buyer,
+      (select count(*)::int from wa_chats where segment = 'warm') as seg_warm,
+      (select count(*)::int from wa_chats where segment = 'problem') as seg_problem`);
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(waChats).where(pendingWhere);
+  return { ...(r.rows[0] as Record<string, number | null>), analysis_left: Number(n) };
 }

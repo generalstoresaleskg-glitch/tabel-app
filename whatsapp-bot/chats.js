@@ -600,6 +600,10 @@ export function setupChats({ getSock, callApp, sendGroup, logger, redis, enabled
       lines.push(`Сохранено: ${s.chats} переписок, ${s.messages} сообщений`);
       if (s.oldest_ts) lines.push(`Самое раннее сообщение: ${fmtTime(s.oldest_ts).slice(0, 8)}`);
       lines.push(`Ещё не докачано до начала: ${s.backfill_left}`);
+      if (s.analyzed != null) {
+        lines.push(`Разобрано DeepSeek: ${s.analyzed}, осталось разобрать: ${s.analysis_left}`);
+        lines.push(`Постоянные: ${s.seg_loyal} · Купили: ${s.seg_buyer} · Интересовались: ${s.seg_warm} · С жалобой: ${s.seg_problem}`);
+      }
       lines.push(`Клиентов в базе: ${s.clients}`);
     }
     lines.push(job.progress ? `Сейчас: ${job.progress}` : "Сейчас: ничего не выполняется");
