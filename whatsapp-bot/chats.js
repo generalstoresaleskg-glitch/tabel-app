@@ -406,6 +406,44 @@ export function setupChats({ getSock, callApp, sendGroup, logger, redis, enabled
 }
 Пиши по-русски, конкретно, без воды. 5–10 пунктов в каждом списке, где хватает данных.`;
 
+  // Учёт расхода DeepSeek: токены и примерная стоимость за всё время и за
+  // сегодня (Redis). Цены $ за 1 млн токенов — DEEPSEEK_PRICE_IN / _CACHED /
+  // _OUT, по умолчанию deepseek-flash в обычные часы.
+  const PRICE = {
+    in: Number(process.env.DEEPSEEK_PRICE_IN || 0.3),
+    cached: Number(process.env.DEEPSEEK_PRICE_CACHED || 0.006),
+    out: Number(process.env.DEEPSEEK_PRICE_OUT || 1.2),
+  };
+  async function trackUsage(model, u) {
+    if (!u) return;
+    const hit = u.prompt_cache_hit_tokens ?? 0;
+    const miss = u.prompt_cache_miss_tokens ?? Math.max(0, (u.prompt_tokens ?? 0) - hit);
+    const out = u.completion_tokens ?? 0;
+    // В миллионных долях доллара: токены × цена за 1 млн токенов.
+    const micro = Math.round(miss * PRICE.in + hit * PRICE.cached + out * PRICE.out);
+    const day = new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);
+    const m = redis.multi();
+    for (const k of ["usage:deepseek:total", `usage:deepseek:${day}`]) {
+      m.hincrby(k, "requests", 1);
+      m.hincrby(k, "in", miss);
+      m.hincrby(k, "cached", hit);
+      m.hincrby(k, "out", out);
+      m.hincrby(k, "micro_usd", micro);
+    }
+    m.expire(`usage:deepseek:${day}`, 60 * 24 * 3600);
+    await m.exec();
+    if (out >= 1400) logger.warn({ model, out }, "Ответ DeepSeek упёрся в лимит токенов");
+  }
+
+  async function usageLines() {
+    const day = new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);
+    const [t, d] = await Promise.all([redis.hgetall("usage:deepseek:total"), redis.hgetall(`usage:deepseek:${day}`)]);
+    const fmt = (h) =>
+      `${h.requests || 0} запросов, ~$${((Number(h.micro_usd) || 0) / 1e6).toFixed(3)} (токены: ${h.in || 0} вход, ${h.cached || 0} из кэша, ${h.out || 0} ответ)`;
+    if (!t.requests) return ["DeepSeek: расход пока не считался"];
+    return [`DeepSeek сегодня: ${fmt(d)}`, `DeepSeek всего: ${fmt(t)}`];
+  }
+
   async function deepseek(system, user, maxTokens) {
     const key = process.env.DEEPSEEK_API_KEY;
     if (!key) throw Object.assign(new Error("DEEPSEEK_API_KEY не задан"), { fatal: true });
@@ -455,6 +493,7 @@ export function setupChats({ getSock, callApp, sendGroup, logger, redis, enabled
           continue;
         }
         const data = await res.json();
+        trackUsage(model, data?.usage).catch(() => {});
         const content = data?.choices?.[0]?.message?.content ?? "";
         const json = content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1);
         try {
@@ -606,6 +645,7 @@ export function setupChats({ getSock, callApp, sendGroup, logger, redis, enabled
       }
       lines.push(`Клиентов в базе: ${s.clients}`);
     }
+    lines.push(...(await usageLines().catch(() => [])));
     lines.push(job.progress ? `Сейчас: ${job.progress}` : "Сейчас: ничего не выполняется");
     return lines.join("\n");
   }
