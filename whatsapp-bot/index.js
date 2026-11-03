@@ -122,7 +122,10 @@ async function startSock() {
     logger,
     browser,
     syncFullHistory: CHAT_ANALYSIS,
-    shouldSyncHistoryMessage: () => CHAT_ANALYSIS,
+    // Бот магазина берёт всю историю. Бот владельца — стандартную короткую
+    // синхронизацию Baileys (без неё WhatsApp-сессия со временем сыпется);
+    // переписки он при этом никуда не сохраняет и не анализирует.
+    ...(CHAT_ANALYSIS ? { shouldSyncHistoryMessage: () => true } : {}),
     // Не «светиться» онлайн: иначе телефон магазина перестаёт показывать
     // уведомления о новых сообщениях, пока бот подключён.
     markOnlineOnConnect: false,
