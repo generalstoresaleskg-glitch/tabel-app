@@ -101,9 +101,14 @@ function centered(
   return `<text x="${x}" y="${y}" text-anchor="middle" font-family="Lora" font-size="${o.size}" font-weight="${o.weight ?? 400}" font-style="${o.italic ? "italic" : "normal"}" letter-spacing="${o.spacing ?? 0}" fill="${o.fill}" ${o.extra ?? ""}>${esc(text)}</text>`;
 }
 
-export function buildCertificateSvg(d: CertificateData): string {
+// Слои сертификата снизу вверх. Для PNG рисуются все, для видео каждый слой
+// выводится отдельной прозрачной картинкой и появляется в своё время.
+export const LAYERS = ["base", "logo", "title", "amount", "card", "quote", "footer"] as const;
+export type Layer = (typeof LAYERS)[number];
+
+export function buildCertificateSvg(d: CertificateData, only?: Layer): string {
   const a = assets();
-  const parts: string[] = [];
+  const layer: Record<Layer, string[]> = { base: [], logo: [], title: [], amount: [], card: [], quote: [], footer: [] };
 
   // --- сумма: подгоняем под ширину (5 000 … 1 000 000) ---
   const amountText = formatAmount(d.amount);
@@ -130,8 +135,8 @@ export function buildCertificateSvg(d: CertificateData): string {
   // Короткое пожелание в 1 строку центрируем по вертикали между «КИМДЕН» и низом карточки.
   const qFirst = qLines.length === 1 ? QUOTE_TOP + lh / 2 : QUOTE_TOP;
 
-  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`);
-  parts.push(`<defs>
+  const head = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
+  const defs = (`<defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#d6dfc3"/><stop offset="0.45" stop-color="#f5f2e5"/><stop offset="1" stop-color="#ecd7d4"/>
     </linearGradient>
@@ -142,50 +147,50 @@ export function buildCertificateSvg(d: CertificateData): string {
     <filter id="card" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#6b5a4e" flood-opacity="0.14"/></filter>
     <filter id="logo" x="-15%" y="-15%" width="130%" height="130%"><feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#6b5a4e" flood-opacity="0.18"/></filter>
   </defs>`);
-  parts.push(`<rect width="${W}" height="${H}" fill="url(#bg)"/>`);
-  parts.push(`<rect x="40" y="40" width="1000" height="1840" rx="56" fill="none" stroke="#c9a45c" stroke-width="3"/>`);
-  parts.push(`<rect x="56" y="56" width="968" height="1808" rx="42" fill="none" stroke="#d9c28f" stroke-width="1.5"/>`);
+  layer.base.push(`<rect width="${W}" height="${H}" fill="url(#bg)"/>`);
+  layer.base.push(`<rect x="40" y="40" width="1000" height="1840" rx="56" fill="none" stroke="#c9a45c" stroke-width="3"/>`);
+  layer.base.push(`<rect x="56" y="56" width="968" height="1808" rx="42" fill="none" stroke="#d9c28f" stroke-width="1.5"/>`);
 
   // логотип
-  parts.push(`<circle cx="540" cy="331" r="228" fill="#e9ecdb" stroke="#d9c28f" stroke-width="2" filter="url(#logo)"/>`);
-  parts.push(`<image href="${a.logoDataUri}" x="${540 - 214}" y="${331 - 214}" width="428" height="428"/>`);
+  layer.logo.push(`<circle cx="540" cy="331" r="228" fill="#e9ecdb" stroke="#d9c28f" stroke-width="2" filter="url(#logo)"/>`);
+  layer.logo.push(`<image href="${a.logoDataUri}" x="${540 - 214}" y="${331 - 214}" width="428" height="428"/>`);
 
   // разделитель
-  parts.push(`<line x1="370" y1="592" x2="710" y2="592" stroke="#c9a45c" stroke-width="1.5"/>`);
-  parts.push(star(540, 592, 7, 1));
+  layer.title.push(`<line x1="370" y1="592" x2="710" y2="592" stroke="#c9a45c" stroke-width="1.5"/>`);
+  layer.title.push(star(540, 592, 7, 1));
 
-  parts.push(centered(672, "БЕЛЕК СЕРТИФИКАТЫ", { size: 46, fill: "#8c9c6e", spacing: 8 }));
-  parts.push(centered(945, amountText, { size: amountSize, fill: "url(#amt)", weight: 700, extra: 'filter="url(#sh)"' }));
-  parts.push(centered(1052, "СОМ", { size: 64, fill: "#9a6218", weight: 700, spacing: 20 }));
+  layer.title.push(centered(672, "БЕЛЕК СЕРТИФИКАТЫ", { size: 46, fill: "#8c9c6e", spacing: 8 }));
+  layer.amount.push(centered(945, amountText, { size: amountSize, fill: "url(#amt)", weight: 700, extra: 'filter="url(#sh)"' }));
+  layer.amount.push(centered(1052, "СОМ", { size: 64, fill: "#9a6218", weight: 700, spacing: 20 }));
 
   // карточка
-  parts.push(`<rect x="112" y="1092" width="856" height="606" rx="50" fill="#fcfaf3" stroke="#e8d6d3" stroke-width="2" filter="url(#card)"/>`);
-  parts.push(centered(1172, "КИМГЕ", { size: 32, fill: "#8c9c6e", spacing: 1 }));
-  parts.push(centered(1255, to.text, { size: to.size, fill: "#2b2b2b" }));
-  parts.push(`<line x1="480" y1="1316" x2="600" y2="1316" stroke="#d9c28f" stroke-width="1.5"/>`);
-  parts.push(centered(1372, "КИМДЕН", { size: 32, fill: "#8c9c6e", spacing: 1 }));
-  parts.push(centered(1432, from.text, { size: from.size, fill: "#2b2b2b" }));
+  layer.card.push(`<rect x="112" y="1092" width="856" height="606" rx="50" fill="#fcfaf3" stroke="#e8d6d3" stroke-width="2" filter="url(#card)"/>`);
+  layer.card.push(centered(1172, "КИМГЕ", { size: 32, fill: "#8c9c6e", spacing: 1 }));
+  layer.card.push(centered(1255, to.text, { size: to.size, fill: "#2b2b2b" }));
+  layer.card.push(`<line x1="480" y1="1316" x2="600" y2="1316" stroke="#d9c28f" stroke-width="1.5"/>`);
+  layer.card.push(centered(1372, "КИМДЕН", { size: 32, fill: "#8c9c6e", spacing: 1 }));
+  layer.card.push(centered(1432, from.text, { size: from.size, fill: "#2b2b2b" }));
 
   qLines.forEach((line, i) => {
-    parts.push(centered(Math.round(qFirst + i * lh), line, { size: qSize, fill: "#6b5a4e", italic: true }));
+    layer.quote.push(centered(Math.round(qFirst + i * lh), line, { size: qSize, fill: "#6b5a4e", italic: true }));
   });
   const lastW = width(a.italic, qLines[qLines.length - 1] ?? "", qSize);
   const lastY = Math.round(qFirst + (qLines.length - 1) * lh);
-  parts.push(star(Math.min(540 + lastW / 2 + 34, 925), lastY - 18, 20));
-  if (qLines.length <= 2) parts.push(star(Math.min(540 + lastW / 2 + 58, 949), lastY - 44, 10));
+  layer.quote.push(star(Math.min(540 + lastW / 2 + 34, 925), lastY - 18, 20));
+  if (qLines.length <= 2) layer.quote.push(star(Math.min(540 + lastW / 2 + 58, 949), lastY - 44, 10));
 
   // низ
-  parts.push(centered(1788, "@ayay.kyz", { size: 38, fill: "#8c9c6e" }));
-  parts.push(centered(1836, `№ ${d.code}`, { size: 26, fill: "#a7b08d", spacing: 3 }));
+  layer.footer.push(centered(1788, "@ayay.kyz", { size: 38, fill: "#8c9c6e" }));
+  layer.footer.push(centered(1836, `№ ${d.code}`, { size: 26, fill: "#a7b08d", spacing: 3 }));
 
   // искры
   for (const [x, y, r, o] of [
     [885, 737, 18, 0.9], [677, 707, 10, 0.7], [365, 1062, 8, 0.8], [196, 1078, 14, 0.9],
     [230, 1770, 10, 0.7], [985, 1768, 12, 0.7], [548, 683, 5, 0.5],
-  ] as const) parts.push(star(x, y, r, o));
+  ] as const) layer.base.push(star(x, y, r, o));
 
-  parts.push(`</svg>`);
-  return parts.join("\n");
+  const names = only ? [only] : LAYERS;
+  return [head, defs, ...names.flatMap((n) => layer[n]), "</svg>"].join("\n");
 }
 
 export function renderCertificatePng(d: CertificateData): Buffer {
@@ -195,4 +200,18 @@ export function renderCertificatePng(d: CertificateData): Buffer {
     font: { fontFiles: a.fontFiles, loadSystemFonts: false, defaultFontFamily: "Lora" },
   });
   return resvg.render().asPng();
+}
+
+// Каждый слой отдельным PNG с прозрачным фоном (кроме base) — для видео.
+export function renderCertificateLayers(d: CertificateData): Record<Layer, Buffer> {
+  const a = assets();
+  const out = {} as Record<Layer, Buffer>;
+  for (const name of LAYERS) {
+    const resvg = new Resvg(buildCertificateSvg(d, name), {
+      fitTo: { mode: "width", value: W },
+      font: { fontFiles: a.fontFiles, loadSystemFonts: false, defaultFontFamily: "Lora" },
+    });
+    out[name] = resvg.render().asPng();
+  }
+  return out;
 }

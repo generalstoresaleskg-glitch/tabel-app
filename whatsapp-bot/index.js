@@ -269,13 +269,13 @@ const CERT_COMMAND_RE = /^\s*[\/\\]\s*сертификат(?![а-яё])/i;
 
 // Бинарный ответ приложения (PNG сертификата). Несколько попыток: Vercel и
 // Neon после простоя просыпаются не мгновенно.
-async function fetchAppBuffer(path) {
+async function fetchAppBuffer(path, timeoutMs = 45000) {
   let lastErr;
   for (let i = 0; i < 3; i++) {
     try {
       const res = await fetch(`${APP_URL}${path}`, {
         headers: { Authorization: `Bearer ${BOT_TOKEN}` },
-        signal: AbortSignal.timeout(45000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return Buffer.from(await res.arrayBuffer());
@@ -315,12 +315,27 @@ async function handleCertificate(m, text) {
   try {
     const image = await fetchAppBuffer(r.imagePath);
     await sock.sendMessage(GROUP_ID, { image, caption: `Сертификат ${r.code}` }, { quoted: m });
-    logger.info({ code: r.code, status: r.status, bytes: image.length }, "Команда /сертификат обработана");
+    logger.info({ code: r.code, status: r.status, bytes: image.length }, "Команда /сертификат: картинка отправлена");
   } catch (err) {
     logger.error({ err: err?.message, code: r.code }, "Не удалось получить картинку сертификата");
     await sock.sendMessage(
       GROUP_ID,
       { text: `⚠️ Сертификат ${r.code} создан, но картинка не загрузилась. Пришлите «/сертификат ${r.code}» — отправлю ещё раз.` },
+      { quoted: m }
+    );
+    return;
+  }
+
+  // Видео собирается на сервере дольше (до ~минуты), поэтому идёт отдельным сообщением после картинки.
+  try {
+    const video = await fetchAppBuffer(r.imagePath.replace("/image?", "/video?"), 120000);
+    await sock.sendMessage(GROUP_ID, { video, mimetype: "video/mp4", caption: `Видео ${r.code}` }, { quoted: m });
+    logger.info({ code: r.code, bytes: video.length }, "Команда /сертификат: видео отправлено");
+  } catch (err) {
+    logger.error({ err: err?.message, code: r.code }, "Не удалось получить видео сертификата");
+    await sock.sendMessage(
+      GROUP_ID,
+      { text: `⚠️ Картинка готова, а видео ${r.code} не получилось. Пришлите «/сертификат ${r.code}» — попробую ещё раз.` },
       { quoted: m }
     );
   }
