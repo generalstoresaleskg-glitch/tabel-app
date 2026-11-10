@@ -36,7 +36,14 @@ export type CertificateParseResult =
   | { ok: true; certificate: ParsedCertificate }
   | { ok: false; errors: string[] };
 
-const COMMAND_RE = /^\s*[\/\\]\s*сертификат(?![а-яё])\s*[:\-–—]?\s*/i;
+// Терпимо к опечаткам: «/сертификат», «/сетификат», «/сертефикат», «/сертификаты» —
+// слово начинается на «с», содержит «ф» и «к» (то же правило в боте, whatsapp-bot/index.js).
+const COMMAND_RE = /^\s*[\/\\]\s*с[а-яё]{0,4}ф[а-яё]{0,3}к[а-яё]{0,3}(?![а-яё])\s*[:\-–—]?\s*/i;
+
+// Текст сообщения без самой команды.
+export function stripCertificateCommand(text: string): string {
+  return text.replace(COMMAND_RE, "");
+}
 
 export function isCertificateCommand(text: string): boolean {
   return COMMAND_RE.test(text);
@@ -64,7 +71,7 @@ function clean(v: string): string {
 }
 
 export function parseCertificateMessage(text: string): CertificateParseResult {
-  const body = text.replace(COMMAND_RE, "");
+  const body = stripCertificateCommand(text);
   const found: Partial<Record<Field, string>> = {};
 
   // Границами полей считаем только первое вхождение каждой метки: повтор метки
@@ -93,8 +100,9 @@ export function parseCertificateMessage(text: string): CertificateParseResult {
   if (!found.amount) {
     errors.push("не указана сумма («сумма: 5000»)");
   } else {
-    const digits = found.amount.replace(/[\s .,]/g, "").replace(/сом.*$/i, "");
-    amount = /^\d+$/.test(digits) ? Number(digits) : 0;
+    // Берём первое число: «3000», «3 000 сом», «3000с», «3.000» — всё читается как 3000.
+    const num = /\d[\d\s\u00a0.,]*/.exec(found.amount)?.[0].replace(/[\s\u00a0.,]/g, "") ?? "";
+    amount = /^\d+$/.test(num) ? Number(num) : 0;
     if (!amount || amount < 1) errors.push(`не удалось прочитать сумму «${found.amount}»`);
     else if (amount > MAX_CERTIFICATE_AMOUNT) errors.push("сумма слишком большая");
   }

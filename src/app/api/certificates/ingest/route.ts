@@ -1,7 +1,12 @@
 // Бот пересылает сюда сообщения «/сертификат …» из общего чата WhatsApp.
 // Здесь сертификат разбирается и записывается в базу; картинку бот забирает
 // отдельным запросом /api/certificates/image?code=… и отправляет в чат.
-import { CERTIFICATE_FORMAT_HINT, isCertificateCommand, parseCertificateMessage } from "@/lib/certificate-parse";
+import {
+  CERTIFICATE_FORMAT_HINT,
+  isCertificateCommand,
+  parseCertificateMessage,
+  stripCertificateCommand,
+} from "@/lib/certificate-parse";
 import { certificateSummary, findCertificateByCode, issueCertificate } from "@/lib/certificates";
 import { findUserByPhone, isBotRequest } from "@/lib/clients";
 
@@ -19,7 +24,7 @@ export async function POST(request: Request) {
   if (!isCertificateCommand(text)) return Response.json({ ignored: true });
 
   // «/сертификат 4827» — прислать картинку уже выданного сертификата ещё раз.
-  const codeOnly = /^\s*[\/\\]\s*сертификат\s*[:\-–—]?\s*((?:AK-?|№)?\s*\d{4,5})\s*$/i.exec(text);
+  const codeOnly = /^\s*((?:AK-?|№)?\s*\d{4,5})\s*$/i.exec(stripCertificateCommand(text));
   if (codeOnly) {
     const row = await findCertificateByCode(codeOnly[1]);
     if (!row) return Response.json({ ok: false, reply: `❌ Сертификат ${codeOnly[1].trim()} не найден.` });
@@ -35,7 +40,7 @@ export async function POST(request: Request) {
   const parsed = parseCertificateMessage(text);
   if (!parsed.ok) {
     // Пустая команда «/сертификат» — просто показываем шаблон, без «ошибки».
-    const bare = text.replace(/^\s*[\/\\]\s*сертификат\s*[:\-–—]?\s*/i, "").trim() === "";
+    const bare = stripCertificateCommand(text).trim() === "";
     return Response.json({
       ok: false,
       reply: bare
