@@ -34,29 +34,38 @@ export async function renderCertificateVideo(d: CertificateData): Promise<Buffer
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cert-"));
   try {
     const order = Object.keys(layers) as Layer[];
+    const frames = Math.round(ANIM_END * FPS);
     const args: string[] = ["-v", "error", "-y"];
     for (const name of order) {
       fs.writeFileSync(path.join(dir, `${name}.png`), layers[name]);
-      args.push("-loop", "1", "-framerate", String(FPS), "-t", String(ANIM_END), "-i", path.join(dir, `${name}.png`));
+      args.push("-framerate", String(FPS), "-i", path.join(dir, `${name}.png`));
     }
 
-    // base — подложка; остальные слои накладываются с плавным появлением и подъёмом.
-    const f: string[] = ["[0:v]format=rgba[b0]"];
+    // Слои — одиночные картинки; фильтр loop держит в памяти один кадр и повторяет его.
+    // (Вариант с «-loop 1» на каждом входе копил кадры в очередях и съедал ~3 ГБ —
+    // Vercel убивал ffmpeg по памяти; сейчас ~330 МБ.) yuva420p вместо rgba — втрое
+    // меньше данных на кадр. base — подложка, остальные накладываются с плавным
+    // появлением и подъёмом.
+    const still = `loop=loop=-1:size=1:start=0,trim=end_frame=${frames},setpts=N/${FPS}/TB`;
+    const f: string[] = [`[0:v]${still},format=yuv420p[b0]`];
     let prev = "b0";
     order.slice(1).forEach((name, i) => {
       const t = TIMELINE[name as Exclude<Layer, "base">];
       const idx = i + 1;
-      f.push(`[${idx}:v]format=rgba,fade=t=in:st=${t.at}:d=${t.dur}:alpha=1[l${idx}]`);
+      f.push(`[${idx}:v]${still},format=yuva420p,fade=t=in:st=${t.at}:d=${t.dur}:alpha=1[l${idx}]`);
       const p = `min(max((t-${t.at})/${t.dur},0),1)`;
       const y = t.rise ? `${t.rise}*pow(1-${p},3)` : "0";
-      f.push(`[${prev}][l${idx}]overlay=x=0:y='${y}':format=auto[b${idx}]`);
+      f.push(`[${prev}][l${idx}]overlay=x=0:y='${y}':format=yuv420[b${idx}]`);
       prev = `b${idx}`;
     });
-    f.push(`[${prev}]format=yuv420p,tpad=stop_mode=clone:stop_duration=${TOTAL - ANIM_END}[out]`);
+    // fps=30 возвращает частоту кадров, без неё tpad не растягивает последний кадр.
+    f.push(`[${prev}]fps=${FPS},format=yuv420p,tpad=stop_mode=clone:stop_duration=${(TOTAL - ANIM_END + 0.05).toFixed(2)}[out]`);
 
     const outFile = path.join(dir, "certificate.mp4");
     args.push(
       "-filter_complex", f.join(";"),
+      "-filter_complex_threads", "1",
+      "-threads", "1",
       "-map", "[out]",
       "-r", String(FPS),
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
