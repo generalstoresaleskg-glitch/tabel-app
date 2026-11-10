@@ -201,6 +201,28 @@ export const clients = pgTable("clients", {
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 });
 
+// --- Подарочные сертификаты -------------------------------------------------
+//
+// Сотрудник пишет в общий чат «/сертификат кому: … от: … сумма: …», бот
+// просит приложение отрисовать картинку. Каждый сертификат получает код
+// (AK-XXXXXX) — по нему потом гасится. source_message_id защищает от дубля,
+// если бот повторил запрос.
+export const certificates = pgTable("certificates", {
+  id: text("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  recipient: text("recipient").notNull(),
+  sender: text("sender").notNull(),
+  amount: integer("amount").notNull(),
+  message: text("message").notNull(),
+  status: text("status", { enum: ["issued", "redeemed", "cancelled"] }).notNull().default("issued"),
+  sourceMessageId: text("source_message_id").unique(),
+  issuedByUserId: text("issued_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  issuedByName: text("issued_by_name"),
+  redeemedAt: text("redeemed_at"),
+  redeemedByName: text("redeemed_by_name"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+});
+
 // --- Переписки WhatsApp магазина (для анализа и будущего ИИ-помощника) -----
 
 // Все текстовые сообщения личных чатов номера магазина. chat — «+996…» или

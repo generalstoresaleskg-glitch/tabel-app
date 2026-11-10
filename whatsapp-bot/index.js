@@ -263,6 +263,69 @@ async function callApp(path, options = {}) {
   throw lastErr;
 }
 
+// --- Сертификаты: «/сертификат …» из общего чата ------------------------------
+
+const CERT_COMMAND_RE = /^\s*[\/\\]\s*сертификат(?![а-яё])/i;
+
+// Бинарный ответ приложения (PNG сертификата). Несколько попыток: Vercel и
+// Neon после простоя просыпаются не мгновенно.
+async function fetchAppBuffer(path) {
+  let lastErr;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(`${APP_URL}${path}`, {
+        headers: { Authorization: `Bearer ${BOT_TOKEN}` },
+        signal: AbortSignal.timeout(45000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return Buffer.from(await res.arrayBuffer());
+    } catch (err) {
+      lastErr = err;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+  throw lastErr;
+}
+
+async function handleCertificate(m, text) {
+  // Старые сообщения (WhatsApp досылает их после переподключения) и повторы не трогаем.
+  const ts = Number(m.messageTimestamp || 0) * 1000;
+  if (ts && Date.now() - ts > 10 * 60 * 1000) return;
+  if (!(await redis.set(`cmd:${m.key.id}`, "1", "EX", 3600, "NX"))) return;
+
+  let r;
+  try {
+    r = await callApp("/api/certificates/ingest", {
+      method: "POST",
+      body: JSON.stringify({ text, senderPhone: senderPhone(m), senderName: m.pushName || null, messageId: m.key.id }),
+    });
+  } catch (err) {
+    logger.error({ err: err?.message }, "Не удалось передать сертификат в приложение");
+    await sock.sendMessage(
+      GROUP_ID,
+      { text: "⚠️ Не получилось создать сертификат — система не ответила. Отправьте сообщение ещё раз через минуту." },
+      { quoted: m }
+    );
+    return;
+  }
+  if (r.ignored) return;
+  if (r.reply) await sock.sendMessage(GROUP_ID, { text: r.reply }, { quoted: m });
+  if (!r.ok || !r.imagePath) return;
+
+  try {
+    const image = await fetchAppBuffer(r.imagePath);
+    await sock.sendMessage(GROUP_ID, { image, caption: `Сертификат ${r.code}` }, { quoted: m });
+    logger.info({ code: r.code, status: r.status, bytes: image.length }, "Команда /сертификат обработана");
+  } catch (err) {
+    logger.error({ err: err?.message, code: r.code }, "Не удалось получить картинку сертификата");
+    await sock.sendMessage(
+      GROUP_ID,
+      { text: `⚠️ Сертификат ${r.code} создан, но картинка не загрузилась. Пришлите «/сертификат ${r.code}» — отправлю ещё раз.` },
+      { quoted: m }
+    );
+  }
+}
+
 async function handleIncoming({ messages, type }) {
   if (!APP_URL) return;
   for (const m of messages) {
@@ -276,6 +339,11 @@ async function handleIncoming({ messages, type }) {
         const reply = await chats.handleCommand(text).catch((err) => `⚠️ ${err?.message}`);
         if (reply) await sock.sendMessage(GROUP_ID, { text: reply }, { quoted: m });
       }
+      continue;
+    }
+
+    if (IS_MAIN && type === "notify" && CERT_COMMAND_RE.test(text)) {
+      await handleCertificate(m, text).catch((err) => logger.error({ err: err?.message }, "Ошибка команды /сертификат"));
       continue;
     }
 
