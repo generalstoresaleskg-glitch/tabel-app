@@ -180,8 +180,8 @@ export function buildCertificateSvg(d: CertificateData, only?: Layer): string {
   if (qLines.length <= 2) layer.quote.push(star(Math.min(540 + lastW / 2 + 58, 949), lastY - 44, 10));
 
   // низ
-  layer.footer.push(centered(1788, "@ayay.kyz", { size: 38, fill: "#8c9c6e" }));
-  layer.footer.push(centered(1836, `№ ${d.code}`, { size: 26, fill: "#a7b08d", spacing: 3 }));
+  layer.footer.push(centered(1768, "@ayay.kyz", { size: 36, fill: "#8c9c6e" }));
+  layer.footer.push(centered(1830, `Сертификат № ${d.code}`, { size: 44, fill: "#6f7f52", weight: 600, spacing: 2 }));
 
   // искры
   for (const [x, y, r, o] of [
