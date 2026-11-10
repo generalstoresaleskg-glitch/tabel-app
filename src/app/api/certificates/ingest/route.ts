@@ -18,11 +18,11 @@ export async function POST(request: Request) {
 
   if (!isCertificateCommand(text)) return Response.json({ ignored: true });
 
-  // «/сертификат AK-XXXXXX» — прислать картинку уже выданного сертификата ещё раз.
-  const codeOnly = /^\s*[\/\\]\s*сертификат\s*[:\-–—]?\s*(AK-[A-Za-z0-9]{6})\s*$/i.exec(text);
+  // «/сертификат 4827» — прислать картинку уже выданного сертификата ещё раз.
+  const codeOnly = /^\s*[\/\\]\s*сертификат\s*[:\-–—]?\s*((?:AK-?|№)?\s*\d{4,5})\s*$/i.exec(text);
   if (codeOnly) {
     const row = await findCertificateByCode(codeOnly[1]);
-    if (!row) return Response.json({ ok: false, reply: `❌ Сертификат ${codeOnly[1].toUpperCase()} не найден.` });
+    if (!row) return Response.json({ ok: false, reply: `❌ Сертификат ${codeOnly[1].trim()} не найден.` });
     return Response.json({
       ok: true,
       status: "existing",

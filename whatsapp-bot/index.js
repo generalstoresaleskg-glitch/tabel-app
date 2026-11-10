@@ -266,6 +266,7 @@ async function callApp(path, options = {}) {
 // --- Сертификаты: «/сертификат …» из общего чата ------------------------------
 
 const CERT_COMMAND_RE = /^\s*[\/\\]\s*сертификат(?![а-яё])/i;
+const REDEEM_COMMAND_RE = /^\s*[\/\\]\s*погасить(?![а-яё])/i;
 
 // Бинарный ответ приложения (PNG сертификата). Несколько попыток: Vercel и
 // Neon после простоя просыпаются не мгновенно.
@@ -285,6 +286,27 @@ async function fetchAppBuffer(path, timeoutMs = 45000) {
     }
   }
   throw lastErr;
+}
+
+// «/погасить 4827» — сертификат принимают в магазине. Картинка не нужна, только ответ в чат.
+async function handleRedeem(m, text) {
+  const ts = Number(m.messageTimestamp || 0) * 1000;
+  if (ts && Date.now() - ts > 10 * 60 * 1000) return;
+  if (!(await redis.set(`cmd:${m.key.id}`, "1", "EX", 3600, "NX"))) return;
+  let reply;
+  try {
+    const r = await callApp("/api/certificates/redeem", {
+      method: "POST",
+      body: JSON.stringify({ text, senderPhone: senderPhone(m), senderName: m.pushName || null }),
+    });
+    if (r.ignored) return;
+    reply = r.reply;
+    logger.info({ ok: r.ok }, "Команда /погасить обработана");
+  } catch (err) {
+    logger.error({ err: err?.message }, "Не удалось погасить сертификат");
+    reply = "⚠️ Не получилось проверить сертификат — система не ответила. Отправьте команду ещё раз через минуту.";
+  }
+  if (reply) await sock.sendMessage(GROUP_ID, { text: reply }, { quoted: m });
 }
 
 async function handleCertificate(m, text) {
@@ -354,6 +376,11 @@ async function handleIncoming({ messages, type }) {
         const reply = await chats.handleCommand(text).catch((err) => `⚠️ ${err?.message}`);
         if (reply) await sock.sendMessage(GROUP_ID, { text: reply }, { quoted: m });
       }
+      continue;
+    }
+
+    if (IS_MAIN && type === "notify" && REDEEM_COMMAND_RE.test(text)) {
+      await handleRedeem(m, text).catch((err) => logger.error({ err: err?.message }, "Ошибка команды /погасить"));
       continue;
     }
 

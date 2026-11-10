@@ -122,3 +122,16 @@ export function parseCertificateMessage(text: string): CertificateParseResult {
 export function formatAmount(n: number): string {
   return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 }
+
+// «/погасить 4827» (также «AK-4827», «№4827»)
+const REDEEM_RE = /^\s*[\/\\]\s*погасить(?![а-яё])\s*[:\-–—]?\s*/i;
+
+export function isRedeemCommand(text: string): boolean {
+  return REDEEM_RE.test(text);
+}
+
+export function redeemCodeFromMessage(text: string): string | null {
+  return text.replace(REDEEM_RE, "").trim() || null;
+}
+
+export const REDEEM_FORMAT_HINT = "Напишите «/погасить» и номер сертификата, например: /погасить 4827";
