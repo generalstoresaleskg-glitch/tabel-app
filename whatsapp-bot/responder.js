@@ -29,14 +29,14 @@ const WAIT_KEY = "reply:wait";
 
 const num = (v, d) => (v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : d);
 
-const ACK_RE = /^[\s\p{P}\p{S}]*(спасибо|благодарю|рахмат|рахмат\s+сизге|ок|окей|ok|okay|хорошо|ладно|понятно|good|thanks|thx|👍|🙏|❤️?|\[стикер\]|\[реакция[^\]]*\])?[\s\p{P}\p{S}]*$/iu;
+const ACK_RE = /^[\s\p{P}\p{S}]*(спасибо|благодарю|рахмат|рахмат\s+сизге|ырахмат|чоң\s+рахмат|rahmat|raxmat|макул|жакшы|болду|сонун|ок|окей|ok|okay|хорошо|ладно|понятно|good|thanks|thx|👍|🙏|❤️?|\[стикер\]|\[реакция[^\]]*\])?[\s\p{P}\p{S}]*$/iu;
 
 // Благодарность или короткое подтверждение, на которое отвечать не нужно:
 // «спасибо», «спасибо большое, очень довольна!», «ок, заберу завтра».
 // Если в сообщении есть вопрос (знак «?» или вопросительное слово) — это
 // не благодарность, клиент ждёт ответа.
-const THANKS_RE = /(спасибо|благодар|рахмат|отлично|супер|класс|замечательно|понятно|поняла|понял|договорились|хорошо|ладно|окей|(^|[\s,.!])ок($|[\s,.!])|(^|[\s,.!])ok($|[\s,.!])|thanks)/i;
-const QUESTION_RE = /\?|(^|[\s,.!])(сколько|когда|где|как|какой|какая|какие|какое|почему|можно|можете|есть ли|есть|нет ли|а |ли|подскажите|скажите|нужно|хочу|хотела|хотел|закаж|достав|цена|цену|стоит)/i;
+const THANKS_RE = /(спасибо|благодар|рахмат|ырахмат|rahmat|raxmat|макул|жакшы|болду|сонун|түшүндүм|түшүнүктүү|ооба|отлично|супер|класс|замечательно|понятно|поняла|понял|договорились|хорошо|ладно|окей|(^|[\s,.!])ок($|[\s,.!])|(^|[\s,.!])ok($|[\s,.!])|thanks)/i;
+const QUESTION_RE = /\?|(^|[\s,.!])(сколько|когда|где|как|какой|какая|какие|какое|почему|можно|можете|есть ли|есть|нет ли|а |ли|подскажите|скажите|нужно|хочу|хотела|хотел|закаж|достав|цена|цену|стоит|канча|качан|кайда|кандай|кайсы|кантип|эмне|эмнеге|неге|ким|барбы|бар\s+бекен|бекен|беле|болобу|болбойбу|керек|баасы|бага|алгым|алсам|жеткир|буйрутма|kancha|kachan|kaida|qancha|narxi)/i;
 
 export function isAck(text) {
   const t = String(text || "").trim();
@@ -55,6 +55,12 @@ export function setupResponder({ getSock, sendGroup, chatRef, textOf, logger, re
     cooldownH: num(process.env.GREETING_COOLDOWN_HOURS, 8),
     ignore: new Set((process.env.IGNORE_PHONES || "").split(",").map((s) => s.replace(/\D/g, "")).filter(Boolean)),
   };
+  const KY_ON =
+    process.env.GREETING_KY_TEXT ||
+    "Саламатсызбы! 🌸 AYAY KYZ'ге жазганыңыз үчүн рахмат. Билдирүүңүздү көрдүк, жакында жооп беребиз.";
+  const KY_OFF =
+    process.env.GREETING_KY_OFF_TEXT ||
+    "Саламатсызбы! 🌸 AYAY KYZ'ге жазганыңыз үчүн рахмат. Азыр байланышта эмеспиз — {when} саат {open}:00 болгондо жооп беребиз. Билдирүүңүз жоголбойт.";
   const GREETING_ON =
     process.env.GREETING_TEXT ||
     "Саламатсызбы! 🌸 Здравствуйте! Спасибо, что написали в AYAY KYZ. Мы увидели ваше сообщение и скоро ответим.";
@@ -76,11 +82,22 @@ export function setupResponder({ getSock, sendGroup, chatRef, textOf, logger, re
     return open - TZ_MS;
   }
 
-  const greetingFor = (ms) => {
+  // Клиент пишет по-кыргызски: особые буквы ң, ө, ү или характерные слова.
+  const KY_RE = /[ңөүҢӨҮ]|(^|[\s,.!?])(саламатсызбы|салам|ырахмат|рахмат|кандай|канча|качан|кайда|кайсы|жакшы|барбы|болобу|бекен|беле|керек|баасы|буйрутма|эмне|макул|ооба|rahmat|kancha|salam)/i;
+  const langOf = (t) => (KY_RE.test(String(t || "")) ? "ky" : "ru");
+
+  const greetingFor = (ms, lang = "ru") => {
+    const open = String(cfg.workStart);
+    const early = hourOf(ms) < cfg.workStart;
+    if (lang === "ky") {
+      if (isWorkTime(ms)) return KY_ON;
+      return KY_OFF.replace("{when}", early ? "бүгүн" : "эртең").replace("{open}", open);
+    }
     if (isWorkTime(ms)) return GREETING_ON;
-    const when = hourOf(ms) < cfg.workStart ? "сегодня" : "завтра";
-    return GREETING_OFF.replace("{when}", when).replace("{open}", String(cfg.workStart));
+    return GREETING_OFF.replace("{when}", early ? "сегодня" : "завтра").replace("{open}", open);
   };
+  // Все варианты собственного приветствия — чтобы не принять его за ответ сотрудника.
+  const isOwnGreeting = (text, ms) => [greetingFor(ms, "ru"), greetingFor(ms, "ky")].includes(text);
 
   const fmtWait = (ms) => {
     const min = Math.max(1, Math.round(ms / 60000));
@@ -94,7 +111,7 @@ export function setupResponder({ getSock, sendGroup, chatRef, textOf, logger, re
     return (n || 0) * 1000;
   };
 
-  async function greet(sock, jid, ms, chat) {
+  async function greet(sock, jid, ms, chat, clientText) {
     // Небольшая «человеческая» пауза и индикатор набора текста.
     await sleep(4000 + Math.random() * 5000);
     // Пока ждали, сотрудник мог уже ответить — тогда приветствие не нужно.
@@ -102,7 +119,7 @@ export function setupResponder({ getSock, sendGroup, chatRef, textOf, logger, re
     try {
       await sock.sendPresenceUpdate("composing", jid);
       await sleep(1500 + Math.random() * 1500);
-      await sock.sendMessage(jid, { text: greetingFor(ms) });
+      await sock.sendMessage(jid, { text: greetingFor(ms, langOf(clientText)) });
       await sock.sendPresenceUpdate("paused", jid);
       logger.info({ chat }, "Автоприветствие отправлено");
     } catch (err) {
@@ -128,7 +145,7 @@ export function setupResponder({ getSock, sendGroup, chatRef, textOf, logger, re
 
     if (key.fromMe) {
       // Своё автоприветствие ответом не считается.
-      if (text && (text === GREETING_ON || text === greetingFor(ms) || text.startsWith("Саламатсызбы! 🌸 Здравствуйте! Спасибо, что написали"))) return;
+      if (text && isOwnGreeting(text, ms)) return;
       const raw = await redis.hget(WAIT_KEY, ref.chat);
       if (!raw) return;
       const w = JSON.parse(raw);
@@ -165,7 +182,7 @@ export function setupResponder({ getSock, sendGroup, chatRef, textOf, logger, re
 
     // Приветствие — только на свежее сообщение и только в начале разговора.
     if (cfg.greeting && !hadConversation && age < 3 * 60 * 1000 && !isAck(text)) {
-      greet(sock, key.remoteJid, ms, ref.chat).catch(() => {});
+      greet(sock, key.remoteJid, ms, ref.chat, text).catch(() => {});
     }
   }
 
