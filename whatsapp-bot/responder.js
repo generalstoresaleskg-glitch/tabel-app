@@ -31,6 +31,19 @@ const num = (v, d) => (v !== undefined && v !== "" && Number.isFinite(Number(v))
 
 const ACK_RE = /^[\s\p{P}\p{S}]*(спасибо|благодарю|рахмат|рахмат\s+сизге|ок|окей|ok|okay|хорошо|ладно|понятно|good|thanks|thx|👍|🙏|❤️?|\[стикер\]|\[реакция[^\]]*\])?[\s\p{P}\p{S}]*$/iu;
 
+// Благодарность или короткое подтверждение, на которое отвечать не нужно:
+// «спасибо», «спасибо большое, очень довольна!», «ок, заберу завтра».
+// Если в сообщении есть вопрос (знак «?» или вопросительное слово) — это
+// не благодарность, клиент ждёт ответа.
+const THANKS_RE = /(спасибо|благодар|рахмат|отлично|супер|класс|замечательно|понятно|поняла|понял|договорились|хорошо|ладно|окей|(^|[\s,.!])ок($|[\s,.!])|(^|[\s,.!])ok($|[\s,.!])|thanks)/i;
+const QUESTION_RE = /\?|(^|[\s,.!])(сколько|когда|где|как|какой|какая|какие|какое|почему|можно|можете|есть ли|есть|нет ли|а |ли|подскажите|скажите|нужно|хочу|хотела|хотел|закаж|достав|цена|цену|стоит)/i;
+
+export function isAck(text) {
+  const t = String(text || "").trim();
+  if (ACK_RE.test(t)) return true;
+  return t.length <= 60 && THANKS_RE.test(t) && !QUESTION_RE.test(t);
+}
+
 export function setupResponder({ getSock, sendGroup, chatRef, textOf, logger, redis }) {
   const cfg = {
     enabled: process.env.RESPONDER !== "off",
@@ -135,7 +148,7 @@ export function setupResponder({ getSock, sendGroup, chatRef, textOf, logger, re
       w.text = clip(text);
       if (m.pushName) w.name = m.pushName;
       await redis.hset(WAIT_KEY, ref.chat, JSON.stringify(w));
-    } else if (!ACK_RE.test(text)) {
+    } else if (!isAck(text)) {
       await redis.hset(
         WAIT_KEY,
         ref.chat,
@@ -151,7 +164,7 @@ export function setupResponder({ getSock, sendGroup, chatRef, textOf, logger, re
     }
 
     // Приветствие — только на свежее сообщение и только в начале разговора.
-    if (cfg.greeting && !hadConversation && age < 3 * 60 * 1000 && !ACK_RE.test(text)) {
+    if (cfg.greeting && !hadConversation && age < 3 * 60 * 1000 && !isAck(text)) {
       greet(sock, key.remoteJid, ms, ref.chat).catch(() => {});
     }
   }
