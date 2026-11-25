@@ -54,6 +54,8 @@ const KEEP_AWAKE_MS = 10 * 60 * 1000;
 const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
 // Во сколько (час по Бишкеку) писать в чат про дни рождения клиентов.
 const BIRTHDAY_HOUR = Number(process.env.BIRTHDAY_HOUR || 9);
+// Во сколько (час по Бишкеку) в воскресенье напоминать про график на следующую неделю.
+const SCHEDULE_REMINDER_HOUR = Number(process.env.SCHEDULE_REMINDER_HOUR || 12);
 
 if (!BOT_TOKEN) {
   console.error("BOT_TOKEN не задан — без него /notify и /groups не будут работать. Остановка.");
@@ -430,7 +432,7 @@ async function handleIncoming({ messages, type }) {
 
 function bishkekNow() {
   const d = new Date(Date.now() + 6 * 60 * 60 * 1000); // UTC+6, без перехода на летнее время
-  return { date: d.toISOString().slice(0, 10), hour: d.getUTCHours() };
+  return { date: d.toISOString().slice(0, 10), hour: d.getUTCHours(), weekday: d.getUTCDay() };
 }
 
 // Отмечает клиентов как «сегодня поздравлены», возвращает тех, кто ещё не был.
@@ -460,6 +462,31 @@ async function birthdayCheck() {
 
 if (IS_MAIN) setInterval(() => {
   birthdayCheck().catch((err) => logger.error({ err: err?.message }, "Проверка дней рождения не удалась — повторю через 5 минут"));
+}, 5 * 60 * 1000);
+
+// --- Напоминание про график -------------------------------------------------
+//
+// Каждое воскресенье в SCHEDULE_REMINDER_HOUR (по Бишкеку, по умолчанию 12:00)
+// бот пишет в рабочий чат. Отметка в Redis ставится до отправки, поэтому
+// повторов не будет даже после перезапуска. Если бот в 12:00 был оффлайн,
+// напомнит, как только подключится (до 22:00 того же дня).
+
+async function scheduleReminder() {
+  if (!GROUP_ID || connectionStatus !== "open") return;
+  const { date, hour, weekday } = bishkekNow();
+  if (weekday !== 0 || hour < SCHEDULE_REMINDER_HOUR || hour >= 22) return;
+  if (!(await redis.set(`schedule-reminder:${date}`, "1", "EX", 3 * 24 * 3600, "NX"))) return;
+  try {
+    await sock.sendMessage(GROUP_ID, { text: "📅 Не забудьте составить график работы на следующую неделю!" });
+    logger.info("Напоминание про график отправлено");
+  } catch (err) {
+    await redis.del(`schedule-reminder:${date}`); // не отправилось — попробуем в следующую проверку
+    throw err;
+  }
+}
+
+if (IS_MAIN) setInterval(() => {
+  scheduleReminder().catch((err) => logger.error({ err: err?.message }, "Напоминание про график не отправлено — повторю через 5 минут"));
 }, 5 * 60 * 1000);
 
 // --- HTTP-сервер -----------------------------------------------------------
