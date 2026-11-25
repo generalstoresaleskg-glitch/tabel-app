@@ -201,7 +201,7 @@ async function startSock() {
 // Переписки магазина: сохранение, докачка истории и анализ — см. chats.js.
 const chats = setupChats({ getSock: () => sock, callApp, sendGroup, logger, redis, enabled: CHAT_ANALYSIS });
 // Автоприветствие и индикатор «клиент ждёт ответа» — только у бота магазина.
-const responder = !CHAT_ANALYSIS ? null : setupResponder({ getSock: () => sock, sendGroup, chatRef: chats.chatRef, textOf: chats.textOf, logger, redis });
+const responder = !CHAT_ANALYSIS ? null : setupResponder({ getSock: () => sock, groupId: GROUP_ID, sendGroup, chatRef: chats.chatRef, textOf: chats.textOf, logger, redis });
 
 // Кто-то открыл /qr или /pair — бот начинает попытки привязки на 10 минут.
 function wantLink() {
@@ -375,6 +375,15 @@ async function handleIncoming({ messages, type }) {
   for (const m of messages) {
     if (m.key.remoteJid !== GROUP_ID || !m.message) continue;
     const text = messageText(m.message);
+
+    // «+» / «беру» в ответ на напоминание — клиент взят в работу.
+    if (CHAT_ANALYSIS && type === "notify" && Date.now() - Number(m.messageTimestamp || 0) * 1000 < 10 * 60 * 1000) {
+      const taken = await responder.handleTake(m, text).catch((err) => `⚠️ ${err?.message}`);
+      if (taken) {
+        await sock.sendMessage(GROUP_ID, { text: taken }, { quoted: m });
+        continue;
+      }
+    }
 
     // «/ждут» — кто из клиентов сейчас остался без ответа.
     if (CHAT_ANALYSIS && Date.now() - Number(m.messageTimestamp || 0) * 1000 < 10 * 60 * 1000 && /^\s*[\/\\]\s*(ждут|ожидают)/i.test(text)) {

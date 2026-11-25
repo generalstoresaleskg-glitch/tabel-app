@@ -44,7 +44,7 @@ export function isAck(text) {
   return t.length <= 60 && THANKS_RE.test(t) && !QUESTION_RE.test(t);
 }
 
-export function setupResponder({ getSock, sendGroup, chatRef, textOf, logger, redis }) {
+export function setupResponder({ getSock, groupId, sendGroup, chatRef, textOf, logger, redis }) {
   const cfg = {
     enabled: process.env.RESPONDER !== "off",
     greeting: process.env.AUTO_GREETING !== "off",
@@ -53,6 +53,7 @@ export function setupResponder({ getSock, sendGroup, chatRef, textOf, logger, re
     alertMin: num(process.env.REPLY_ALERT_MIN, 10),
     escalateMin: num(process.env.REPLY_ESCALATE_MIN, 30),
     cooldownH: num(process.env.GREETING_COOLDOWN_HOURS, 8),
+    takenRemindMin: num(process.env.TAKEN_REMIND_MIN, 20),
     ignore: new Set((process.env.IGNORE_PHONES || "").split(",").map((s) => s.replace(/\D/g, "")).filter(Boolean)),
   };
   const KY_ON =
@@ -204,6 +205,22 @@ export function setupResponder({ getSock, sendGroup, chatRef, textOf, logger, re
 
   // --- Проверка «кто ждёт» раз в минуту ---------------------------------------
 
+  // Отправка в рабочий чат с запоминанием id сообщения: на него отвечают «+», чтобы взять клиента в работу.
+  async function sendAlert(text, chat) {
+    const sock = getSock();
+    if (!sock || !groupId) return false;
+    try {
+      const sent = await sock.sendMessage(groupId, { text });
+      if (sent?.key?.id) await redis.set(`reply:alertmsg:${sent.key.id}`, chat, "EX", 48 * 3600);
+      return true;
+    } catch (err) {
+      logger.error({ err: err?.message, chat }, "Не удалось отправить напоминание про клиента");
+      return false;
+    }
+  }
+
+  const HINT = "\n👉 Беру в работу: ответьте на это сообщение «+»";
+
   async function tick() {
     if (!cfg.enabled) return;
     const now = Date.now();
@@ -215,17 +232,39 @@ export function setupResponder({ getSock, sendGroup, chatRef, textOf, logger, re
         await redis.hdel(WAIT_KEY, chat);
         continue;
       }
+      // Клиента взяли в работу: второе напоминание не нужно, но если за
+      // TAKEN_REMIND_MIN минут ответа всё нет — напоминаем один раз.
+      if (w.taken) {
+        if (!w.takenReminded && now - w.taken.at >= cfg.takenRemindMin * 60000) {
+          w.takenReminded = true;
+          await redis.hset(WAIT_KEY, chat, JSON.stringify(w));
+          const ok = await sendAlert(
+            `⏰ ${w.taken.by} взял(а) клиента в работу ${fmtWait(now - w.taken.at)} назад, но ответа всё ещё нет.\n👤 ${w.name || "Без имени"} · ${fmtPhone(w.phone)}\n💬 «${w.text}»`,
+            chat
+          );
+          if (!ok) {
+            w.takenReminded = false;
+            await redis.hset(WAIT_KEY, chat, JSON.stringify(w));
+          }
+        }
+        continue;
+      }
       const waited = (now - w.since) / 60000;
       let level = 0;
       if (waited >= cfg.escalateMin) level = 2;
       else if (waited >= cfg.alertMin) level = 1;
       if (level <= (w.lvl || 0)) continue;
+      const prev = w.lvl || 0;
       w.lvl = level;
       await redis.hset(WAIT_KEY, chat, JSON.stringify(w)); // отметка до отправки — без повторов
       const head =
         level === 2 ? `🔴 Клиент ждёт уже ${fmtWait(now - w.first)}! Ответьте сейчас — иначе потеряем.` : `⏰ Клиент ждёт ответа ${fmtWait(now - w.first)}. Ответьте скорее.`;
-      await sendGroup(`${head}\n👤 ${w.name || "Без имени"} · ${fmtPhone(w.phone)}\n💬 «${w.text}»`);
-      logger.info({ chat, level }, "Напоминание про ожидающего клиента отправлено");
+      const ok = await sendAlert(`${head}\n👤 ${w.name || "Без имени"} · ${fmtPhone(w.phone)}\n💬 «${w.text}»${HINT}`, chat);
+      if (ok) logger.info({ chat, level }, "Напоминание про ожидающего клиента отправлено");
+      else {
+        w.lvl = prev; // не отправилось — попробуем в следующую минуту
+        await redis.hset(WAIT_KEY, chat, JSON.stringify(w));
+      }
     }
   }
 
@@ -241,9 +280,37 @@ export function setupResponder({ getSock, sendGroup, chatRef, textOf, logger, re
       .sort((a, b) => a.first - b.first);
     if (!rows.length) return "✅ Все клиенты получили ответ.";
     const now = Date.now();
-    const lines = rows.slice(0, 15).map((w, i) => `${i + 1}. ${w.name || "Без имени"} · ${fmtPhone(w.phone)} — ждёт ${fmtWait(now - w.first)}\n   «${w.text}»`);
+    const lines = rows.slice(0, 15).map((w, i) => `${i + 1}. ${w.name || "Без имени"} · ${fmtPhone(w.phone)} — ждёт ${fmtWait(now - w.first)}${w.taken ? ` · в работе: ${w.taken.by}` : ""}\n   «${w.text}»`);
     return `⏳ Ждут ответа: ${rows.length}\n\n${lines.join("\n")}${rows.length > 15 ? `\n…и ещё ${rows.length - 15}` : ""}`;
   }
 
-  return { attach, listWaiting, config: cfg };
+  // «+», «беру», «в работе» в ответ на напоминание бота — клиент взят в работу.
+  // «/беру» без ответа — берёт самого давно ждущего из тех, кого ещё не взяли.
+  const TAKE_RE = /^\s*(\+|\/\s*беру|беру|берем|берём|взял|взяла|взяли|в\s+работе|принял|приняла|мой|моя|ответ(ю|ила|ил)|алам|мен\s+алам|\+1)\s*[.!]*\s*$/iu;
+
+  async function handleTake(m, text) {
+    if (!cfg.enabled || !TAKE_RE.test(text || "")) return null;
+    const quoted = m.message?.extendedTextMessage?.contextInfo?.stanzaId;
+    let chat = quoted ? await redis.get(`reply:alertmsg:${quoted}`) : null;
+    if (!quoted && /^\s*\/\s*беру/i.test(text)) {
+      const all = Object.entries(await redis.hgetall(WAIT_KEY))
+        .map(([c, r]) => [c, JSON.parse(r)])
+        .filter(([, w]) => !w.taken)
+        .sort((a, b) => a[1].first - b[1].first);
+      chat = all[0]?.[0] || null;
+      if (!chat) return "✅ Некого брать: все клиенты уже получили ответ или взяты в работу.";
+    }
+    if (!chat) return null; // не про наше напоминание
+    if (!(await redis.set(`reply:seen:${m.key.id}`, "1", "EX", 3600, "NX"))) return null;
+    const raw = await redis.hget(WAIT_KEY, chat);
+    if (!raw) return "✅ Этому клиенту уже ответили.";
+    const w = JSON.parse(raw);
+    const by = m.pushName || "Сотрудник";
+    if (w.taken) return `ℹ️ Уже в работе: ${w.taken.by}.`;
+    w.taken = { by, at: Date.now() };
+    await redis.hset(WAIT_KEY, chat, JSON.stringify(w));
+    return `✅ ${by} взял(а) в работу: ${w.name || "клиент"} · ${fmtPhone(w.phone)}`;
+  }
+
+  return { attach, listWaiting, handleTake, config: cfg };
 }
