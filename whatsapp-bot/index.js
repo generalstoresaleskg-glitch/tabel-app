@@ -21,6 +21,7 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import { useRedisAuthState } from "./redis-auth-state.js";
 import { setupChats } from "./chats.js";
+import { setupResponder } from "./responder.js";
 
 const PORT = process.env.PORT || 10000;
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -139,6 +140,7 @@ async function startSock() {
 
   sock.ev.on("creds.update", saveCreds);
   if (CHAT_ANALYSIS) chats.attach(sock);
+  responder?.attach(sock);
   sock.ev.on("messages.upsert", (upsert) => {
     handleIncoming(upsert).catch((err) => logger.error(err, "Ошибка при обработке входящих сообщений"));
   });
@@ -198,6 +200,8 @@ async function startSock() {
 
 // Переписки магазина: сохранение, докачка истории и анализ — см. chats.js.
 const chats = setupChats({ getSock: () => sock, callApp, sendGroup, logger, redis, enabled: CHAT_ANALYSIS });
+// Автоприветствие и индикатор «клиент ждёт ответа» — только у бота магазина.
+const responder = !CHAT_ANALYSIS ? null : setupResponder({ getSock: () => sock, sendGroup, chatRef: chats.chatRef, textOf: chats.textOf, logger, redis });
 
 // Кто-то открыл /qr или /pair — бот начинает попытки привязки на 10 минут.
 function wantLink() {
@@ -371,6 +375,15 @@ async function handleIncoming({ messages, type }) {
   for (const m of messages) {
     if (m.key.remoteJid !== GROUP_ID || !m.message) continue;
     const text = messageText(m.message);
+
+    // «/ждут» — кто из клиентов сейчас остался без ответа.
+    if (CHAT_ANALYSIS && Date.now() - Number(m.messageTimestamp || 0) * 1000 < 10 * 60 * 1000 && /^\s*[\/\\]\s*(ждут|ожидают)/i.test(text)) {
+      if (await redis.set(`cmd:${m.key.id}`, "1", "EX", 3600, "NX")) {
+        const reply = await responder.listWaiting().catch((err) => `⚠️ ${err?.message}`);
+        await sock.sendMessage(GROUP_ID, { text: reply }, { quoted: m });
+      }
+      continue;
+    }
 
     // «/анализ», «/история», «/статус» — работа с перепиской магазина.
     const fresh = Date.now() - Number(m.messageTimestamp || 0) * 1000 < 10 * 60 * 1000;

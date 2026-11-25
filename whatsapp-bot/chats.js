@@ -671,6 +671,8 @@ export function setupChats({ getSock, callApp, sendGroup, logger, redis, enabled
 
   return {
     attach,
+    chatRef,
+    textOf,
     handleCommand,
     status,
     runAnalysis,
